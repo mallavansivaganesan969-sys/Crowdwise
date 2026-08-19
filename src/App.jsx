@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "./supabaseClient";
 
-const ROUTES = [
+/* =========================================================
+   FALLBACK DATA
+   Used if Supabase is temporarily unavailable.
+========================================================= */
+
+const FALLBACK_ROUTES = [
   {
     id: "21G",
     name: "Tambaram → Broadway",
@@ -158,30 +164,33 @@ const DEMAND_DATA = [
   { time: "20:00", value: 73 },
 ];
 
-const ALERTS = [
+const DEFAULT_ALERTS = [
   {
+    id: "default-1",
     type: "critical",
     icon: "!",
     title: "Critical crowd detected",
-    route: "M1",
+    route_id: "M1",
     time: "2 min ago",
     description:
       "Passenger density is approaching maximum capacity on the Kelambakkam corridor.",
   },
   {
+    id: "default-2",
     type: "warning",
     icon: "△",
     title: "Demand spike predicted",
-    route: "70",
+    route_id: "70",
     time: "8 min ago",
     description:
       "AI model predicts an increase in demand during the next 20 minutes.",
   },
   {
+    id: "default-3",
     type: "normal",
     icon: "✓",
     title: "Network operating normally",
-    route: "21G",
+    route_id: "21G",
     time: "14 min ago",
     description:
       "Passenger flow has returned to normal levels after the morning peak.",
@@ -197,13 +206,19 @@ const NAV_ITEMS = [
   { id: "alerts", icon: "!", label: "Alerts", count: 3 },
 ];
 
+/* =========================================================
+   HELPERS
+========================================================= */
+
 function getStatusLabel(status) {
-  return {
-    low: "Low",
-    moderate: "Moderate",
-    high: "High",
-    critical: "Critical",
-  }[status];
+  return (
+    {
+      low: "Low",
+      moderate: "Moderate",
+      high: "High",
+      critical: "Critical",
+    }[status] || "Unknown"
+  );
 }
 
 function getStatusClass(status) {
@@ -217,37 +232,222 @@ function getPredictionStatus(value) {
   return "critical";
 }
 
+function formatTimeAgo(dateValue) {
+  if (!dateValue) return "Recently";
+
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Recently";
+  }
+
+  const difference = Math.max(0, Date.now() - date.getTime());
+  const minutes = Math.floor(difference / 60000);
+
+  if (minutes < 1) return "Just now";
+  if (minutes === 1) return "1 min ago";
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.floor(minutes / 60);
+
+  if (hours === 1) return "1 hour ago";
+  return `${hours} hours ago`;
+}
+
+/* =========================================================
+   APP
+========================================================= */
+
 function App() {
-  const [activePage, setActivePage] = useState("overview");
-  const [selectedRoute, setSelectedRoute] = useState(ROUTES[1]);
+  const [routes, setRoutes] = useState(FALLBACK_ROUTES);
+
+  const [selectedRoute, setSelectedRoute] = useState(
+    FALLBACK_ROUTES[1]
+  );
+
   const [selectedStop, setSelectedStop] = useState(STOPS[0]);
+
+  const [activePage, setActivePage] = useState("overview");
+
   const [predictionMinutes, setPredictionMinutes] = useState(20);
+
   const [isPredicting, setIsPredicting] = useState(false);
+
   const [prediction, setPrediction] = useState(null);
+
   const [notifications, setNotifications] = useState(3);
+
   const [lastUpdated, setLastUpdated] = useState(new Date());
+
+  const [alerts, setAlerts] = useState(DEFAULT_ALERTS);
+
+  const [loadingRoutes, setLoadingRoutes] = useState(true);
+
+  const [databaseError, setDatabaseError] = useState("");
+
+  /* =======================================================
+     LOAD ROUTES FROM SUPABASE
+  ======================================================= */
+
+  const loadRoutes = async () => {
+    setLoadingRoutes(true);
+
+    const { data, error } = await supabase
+      .from("routes")
+      .select("*")
+      .order("id", { ascending: true });
+
+    if (error) {
+      console.error("Supabase routes error:", error);
+
+      setDatabaseError(
+        "Database connection unavailable. Showing local CrowdWise data."
+      );
+
+      setRoutes(FALLBACK_ROUTES);
+      setLoadingRoutes(false);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      const formattedRoutes = data.map((route) => ({
+        id: route.id,
+        name: route.name,
+        short: route.short || route.name,
+        occupancy: Number(route.occupancy || 0),
+        buses: Number(route.buses || 0),
+        frequency: route.frequency || "10 min",
+        status:
+          route.status ||
+          getPredictionStatus(Number(route.occupancy || 0)),
+        passengers: Number(route.passengers || 0),
+        capacity: Number(route.capacity || 74),
+        trend: Number(route.trend || 0),
+        color:
+          route.color ||
+          getPredictionStatus(Number(route.occupancy || 0)),
+      }));
+
+      setRoutes(formattedRoutes);
+
+      setSelectedRoute((current) => {
+        const matchingRoute = formattedRoutes.find(
+          (route) => route.id === current?.id
+        );
+
+        return matchingRoute || formattedRoutes[0];
+      });
+
+      setDatabaseError("");
+    } else {
+      setRoutes(FALLBACK_ROUTES);
+    }
+
+    setLoadingRoutes(false);
+  };
+
+  /* =======================================================
+     LOAD ALERTS FROM SUPABASE
+  ======================================================= */
+
+  const loadAlerts = async () => {
+    const { data, error } = await supabase
+      .from("alerts")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    if (error) {
+      console.error("Supabase alerts error:", error);
+      setAlerts(DEFAULT_ALERTS);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      const formattedAlerts = data.map((alert) => ({
+        id: alert.id,
+        type: alert.type || "normal",
+        icon: alert.icon || "!",
+        title: alert.title || "Network alert",
+        route_id: alert.route_id,
+        time: formatTimeAgo(alert.created_at),
+        description:
+          alert.description || "Network event detected.",
+      }));
+
+      setAlerts(formattedAlerts);
+      setNotifications(formattedAlerts.length);
+    } else {
+      setAlerts(DEFAULT_ALERTS);
+    }
+  };
+
+  /* =======================================================
+     INITIAL DATABASE LOAD
+  ======================================================= */
+
+  useEffect(() => {
+    loadRoutes();
+    loadAlerts();
+  }, []);
+
+  /* =======================================================
+     AUTO REFRESH DATABASE
+  ======================================================= */
+
+  useEffect(() => {
+    const refreshTimer = setInterval(() => {
+      loadRoutes();
+      loadAlerts();
+      setLastUpdated(new Date());
+    }, 30000);
+
+    return () => clearInterval(refreshTimer);
+  }, []);
+
+  /* =======================================================
+     CLOCK
+  ======================================================= */
 
   useEffect(() => {
     const timer = setInterval(() => {
       setLastUpdated(new Date());
-    }, 30000);
+    }, 1000);
 
     return () => clearInterval(timer);
   }, []);
 
-  const averageOccupancy = useMemo(() => {
-    const total = ROUTES.reduce((sum, route) => sum + route.occupancy, 0);
-    return Math.round(total / ROUTES.length);
-  }, []);
+  /* =======================================================
+     STATISTICS
+  ======================================================= */
 
-  const criticalRoutes = ROUTES.filter(
-    (route) => route.status === "critical" || route.status === "high"
-  ).length;
+  const averageOccupancy = useMemo(() => {
+    if (!routes.length) return 0;
+
+    const total = routes.reduce(
+      (sum, route) => sum + Number(route.occupancy || 0),
+      0
+    );
+
+    return Math.round(total / routes.length);
+  }, [routes]);
+
+  const criticalRoutes = useMemo(() => {
+    return routes.filter(
+      (route) =>
+        route.status === "critical" || route.status === "high"
+    ).length;
+  }, [routes]);
+
+  /* =======================================================
+     PREDICTION CALCULATION
+  ======================================================= */
 
   const predictionValue = useMemo(() => {
     if (!selectedRoute) return 0;
 
-    const base = selectedRoute.occupancy;
+    const base = Number(selectedRoute.occupancy || 0);
+
     const timeEffect =
       predictionMinutes <= 15
         ? 5
@@ -257,32 +457,96 @@ function App() {
             ? 13
             : 16;
 
-    return Math.min(98, Math.round(base + timeEffect));
+    return Math.min(
+      98,
+      Math.round(base + timeEffect)
+    );
   }, [selectedRoute, predictionMinutes]);
 
-  const predictionStatus = getPredictionStatus(predictionValue);
+  const predictionStatus =
+    getPredictionStatus(predictionValue);
 
-  const runPrediction = () => {
+  /* =======================================================
+     SAVE PREDICTION TO SUPABASE
+  ======================================================= */
+
+  const runPrediction = async () => {
+    if (!selectedRoute) return;
+
     setIsPredicting(true);
     setPrediction(null);
 
-    setTimeout(() => {
-      setPrediction({
-        value: predictionValue,
+    await new Promise((resolve) =>
+      setTimeout(resolve, 900)
+    );
+
+    const confidence = Math.min(
+      98,
+      Math.round(88 + Math.random() * 8)
+    );
+
+    const generatedPrediction = {
+      value: predictionValue,
+      status: predictionStatus,
+      confidence,
+    };
+
+    setPrediction(generatedPrediction);
+
+    /* Save prediction to database */
+
+    const { error } = await supabase
+      .from("predictions")
+      .insert({
+        route_id: selectedRoute.id,
+        current_occupancy: selectedRoute.occupancy,
+        predicted_occupancy: predictionValue,
+        prediction_minutes: predictionMinutes,
+        confidence,
         status: predictionStatus,
-        confidence: Math.min(
-          98,
-          Math.round(88 + Math.random() * 8)
-        ),
       });
-      setIsPredicting(false);
-    }, 900);
+
+    if (error) {
+      console.error(
+        "Could not save prediction:",
+        error
+      );
+    } else {
+      console.log(
+        "Prediction successfully saved to Supabase."
+      );
+    }
+
+    /* Save current crowd reading */
+
+    const crowdInsert = await supabase
+      .from("crowd_data")
+      .insert({
+        route_id: selectedRoute.id,
+        occupancy: selectedRoute.occupancy,
+        passengers: selectedRoute.passengers,
+      });
+
+    if (crowdInsert.error) {
+      console.error(
+        "Could not save crowd data:",
+        crowdInsert.error
+      );
+    }
+
+    setIsPredicting(false);
   };
+
+  /* =======================================================
+     NAVIGATION
+  ======================================================= */
 
   const scrollToSection = (page) => {
     setActivePage(page);
 
-    const element = document.getElementById(`page-${page}`);
+    const element = document.getElementById(
+      `page-${page}`
+    );
 
     if (element) {
       element.scrollIntoView({
@@ -292,7 +556,13 @@ function App() {
     }
   };
 
+  /* =======================================================
+     ROUTE SELECTION
+  ======================================================= */
+
   const selectRoute = (route) => {
+    if (!route) return;
+
     setSelectedRoute(route);
     setPrediction(null);
     setActivePage("routes");
@@ -300,17 +570,32 @@ function App() {
     setTimeout(() => {
       document
         .getElementById("page-routes")
-        ?.scrollIntoView({ behavior: "smooth" });
+        ?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
     }, 50);
   };
 
-  const formattedTime = lastUpdated.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const formattedTime = lastUpdated.toLocaleTimeString(
+    [],
+    {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }
+  );
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
 
   return (
     <div className="app">
+      {/* =================================================
+          SIDEBAR
+      ================================================= */}
+
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">CW</div>
@@ -321,22 +606,33 @@ function App() {
           </div>
         </div>
 
-        <div className="workspace-label">CONTROL CENTER</div>
+        <div className="workspace-label">
+          CONTROL CENTER
+        </div>
 
         <nav className="main-nav">
           {NAV_ITEMS.map((item) => (
             <button
               key={item.id}
               className={`nav-item ${
-                activePage === item.id ? "active" : ""
+                activePage === item.id
+                  ? "active"
+                  : ""
               }`}
-              onClick={() => scrollToSection(item.id)}
+              onClick={() =>
+                scrollToSection(item.id)
+              }
             >
-              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-icon">
+                {item.icon}
+              </span>
+
               <span>{item.label}</span>
 
               {item.count && (
-                <span className="nav-count">{notifications}</span>
+                <span className="nav-count">
+                  {notifications}
+                </span>
               )}
             </button>
           ))}
@@ -350,17 +646,30 @@ function App() {
 
           <div className="system-mini">
             <span />
-            AI ENGINE ONLINE
+            SUPABASE DATABASE ONLINE
           </div>
 
-          <small>© 2026 CrowdWise Intelligence</small>
+          <small>
+            © 2026 CrowdWise Intelligence
+          </small>
         </div>
       </aside>
 
+      {/* =================================================
+          MAIN CONTENT
+      ================================================= */}
+
       <main className="content">
+        {/* =================================================
+            TOPBAR
+        ================================================= */}
+
         <header className="topbar">
           <div>
-            <span className="eyebrow">TRANSPORT INTELLIGENCE</span>
+            <span className="eyebrow">
+              TRANSPORT INTELLIGENCE
+            </span>
+
             <h1>Network Command Center</h1>
           </div>
 
@@ -378,7 +687,9 @@ function App() {
             <button
               className="icon-button"
               title="Notifications"
-              onClick={() => setNotifications(0)}
+              onClick={() =>
+                setNotifications(0)
+              }
             >
               ♧
             </button>
@@ -386,6 +697,42 @@ function App() {
             <div className="profile">CW</div>
           </div>
         </header>
+
+        {/* =================================================
+            DATABASE STATUS
+        ================================================= */}
+
+        {loadingRoutes && (
+          <div
+            style={{
+              padding: "10px 15px",
+              marginBottom: "15px",
+              border:
+                "1px solid #273528",
+              borderRadius: "8px",
+              fontSize: "9px",
+              color: "#9aa69b",
+            }}
+          >
+            Connecting to CrowdWise database...
+          </div>
+        )}
+
+        {databaseError && (
+          <div
+            style={{
+              padding: "10px 15px",
+              marginBottom: "15px",
+              border:
+                "1px solid #4a3928",
+              borderRadius: "8px",
+              fontSize: "9px",
+              color: "#e5a04e",
+            }}
+          >
+            {databaseError}
+          </div>
+        )}
 
         {/* =================================================
             OVERVIEW
@@ -406,15 +753,21 @@ function App() {
               </h2>
 
               <p>
-                CrowdWise combines live passenger signals, route
-                occupancy, historical demand and AI forecasting to
-                help transport operators make faster decisions.
+                CrowdWise combines live passenger
+                signals, route occupancy, historical
+                demand and AI forecasting to help
+                transport operators make faster
+                decisions.
               </p>
 
               <div className="hero-actions">
                 <button
                   className="primary-button"
-                  onClick={() => scrollToSection("prediction")}
+                  onClick={() =>
+                    scrollToSection(
+                      "prediction"
+                    )
+                  }
                 >
                   <span>◈</span>
                   Run AI Prediction
@@ -422,7 +775,11 @@ function App() {
 
                 <button
                   className="secondary-button"
-                  onClick={() => scrollToSection("network")}
+                  onClick={() =>
+                    scrollToSection(
+                      "network"
+                    )
+                  }
                 >
                   View Network →
                 </button>
@@ -447,23 +804,44 @@ function App() {
 
               <div className="mini-metrics">
                 <div>
-                  <strong>56</strong>
-                  <span>BUSES MONITORED</span>
+                  <strong>
+                    {routes.reduce(
+                      (sum, route) =>
+                        sum +
+                        Number(
+                          route.buses || 0
+                        ),
+                      0
+                    )}
+                  </strong>
+
+                  <span>
+                    BUSES MONITORED
+                  </span>
                 </div>
 
                 <div>
                   <strong>94.2%</strong>
-                  <span>AI CONFIDENCE</span>
+
+                  <span>
+                    AI CONFIDENCE
+                  </span>
                 </div>
 
                 <div>
                   <strong>18.6K</strong>
-                  <span>PASSENGERS TODAY</span>
+
+                  <span>
+                    PASSENGERS TODAY
+                  </span>
                 </div>
 
                 <div>
                   <strong>24/7</strong>
-                  <span>MONITORING</span>
+
+                  <span>
+                    MONITORING
+                  </span>
                 </div>
               </div>
             </div>
@@ -473,8 +851,15 @@ function App() {
             <MetricCard
               icon="◉"
               label="BUSES TRACKED"
-              value="56"
-              sub="↑ 8% from yesterday"
+              value={routes.reduce(
+                (sum, route) =>
+                  sum +
+                  Number(
+                    route.buses || 0
+                  ),
+                0
+              )}
+              sub="Live database estimate"
             />
 
             <MetricCard
@@ -502,7 +887,9 @@ function App() {
 
           <DecisionSupport
             route={selectedRoute}
-            predictionValue={predictionValue}
+            predictionValue={
+              predictionValue
+            }
           />
         </section>
 
@@ -510,56 +897,89 @@ function App() {
             NETWORK
         ================================================= */}
 
-        <section className="panel" id="page-network">
+        <section
+          className="panel"
+          id="page-network"
+        >
           <div className="panel-header">
             <div>
-              <span className="eyebrow">LIVE OPERATIONS</span>
-              <h2>Network Intelligence</h2>
+              <span className="eyebrow">
+                LIVE OPERATIONS
+              </span>
+
+              <h2>
+                Network Intelligence
+              </h2>
             </div>
 
             <span className="data-badge">
-              {ROUTES.length} ACTIVE ROUTES
+              {routes.length} ACTIVE ROUTES
             </span>
           </div>
 
           <div className="network-grid">
             <div className="network-map">
               <NetworkMap
-                routes={ROUTES}
-                selectedRoute={selectedRoute}
-                onSelectRoute={selectRoute}
+                routes={routes}
+                selectedRoute={
+                  selectedRoute
+                }
+                onSelectRoute={
+                  selectRoute
+                }
               />
             </div>
 
             <div className="network-side">
               <div className="side-heading">
-                <span className="eyebrow">LIVE ROUTES</span>
-                <h3>Network status</h3>
+                <span className="eyebrow">
+                  LIVE ROUTES
+                </span>
+
+                <h3>
+                  Network status
+                </h3>
               </div>
 
               <div className="route-status-list">
-                {ROUTES.map((route) => (
+                {routes.map((route) => (
                   <button
                     key={route.id}
                     className="route-status"
-                    onClick={() => selectRoute(route)}
+                    onClick={() =>
+                      selectRoute(
+                        route
+                      )
+                    }
                   >
-                    <div className="route-badge">{route.id}</div>
+                    <div className="route-badge">
+                      {route.id}
+                    </div>
 
                     <div className="route-status-info">
-                      <strong>{route.name}</strong>
+                      <strong>
+                        {route.name}
+                      </strong>
+
                       <span>
-                        {route.buses} buses · {route.frequency}
+                        {route.buses} buses ·{" "}
+                        {route.frequency}
                       </span>
                     </div>
 
                     <div className="route-occupancy">
-                      <b className={getStatusClass(route.status)}>
+                      <b
+                        className={getStatusClass(
+                          route.status
+                        )}
+                      >
                         {route.occupancy}%
                       </b>
 
                       <small>
-                        {getStatusLabel(route.status)}
+                        {getStatusLabel(
+                          route.status
+                        )}
                       </small>
                     </div>
                   </button>
@@ -576,25 +996,41 @@ function App() {
         <section id="page-routes">
           <div className="page-intro">
             <div>
-              <span className="eyebrow">ROUTE INTELLIGENCE</span>
-              <h2>Understand every corridor.</h2>
+              <span className="eyebrow">
+                ROUTE INTELLIGENCE
+              </span>
+
+              <h2>
+                Understand every corridor.
+              </h2>
+
               <p>
-                Compare occupancy, capacity, frequency and AI
-                signals across the active transport network.
+                Compare occupancy, capacity,
+                frequency and AI signals across
+                the active transport network.
               </p>
             </div>
 
-            <span className="page-badge">LIVE DATA</span>
+            <span className="page-badge">
+              DATABASE LIVE
+            </span>
           </div>
 
           <div className="route-cards">
-            {ROUTES.map((route) => (
+            {routes.map((route) => (
               <button
                 key={route.id}
                 className={`route-card ${
-                  selectedRoute.id === route.id ? "selected" : ""
+                  selectedRoute?.id ===
+                  route.id
+                    ? "selected"
+                    : ""
                 }`}
-                onClick={() => selectRoute(route)}
+                onClick={() =>
+                  selectRoute(
+                    route
+                  )
+                }
               >
                 <div className="route-card-top">
                   <span className="route-large-number">
@@ -606,17 +1042,28 @@ function App() {
                       route.status
                     )}`}
                   >
-                    {getStatusLabel(route.status)}
+                    {getStatusLabel(
+                      route.status
+                    )}
                   </span>
                 </div>
 
-                <div className="route-name">{route.name}</div>
+                <div className="route-name">
+                  {route.name}
+                </div>
 
-                <div className="route-arrow">↓</div>
+                <div className="route-arrow">
+                  ↓
+                </div>
 
                 <div className="route-card-footer">
-                  <span>OCCUPANCY</span>
-                  <strong>{route.occupancy}%</strong>
+                  <span>
+                    OCCUPANCY
+                  </span>
+
+                  <strong>
+                    {route.occupancy}%
+                  </strong>
                 </div>
 
                 <div className="occupancy-track">
@@ -630,95 +1077,117 @@ function App() {
             ))}
           </div>
 
-          <div className="route-analysis">
-            <div className="route-analysis-main">
-              <span className="eyebrow">
-                SELECTED CORRIDOR
-              </span>
+          {selectedRoute && (
+            <div className="route-analysis">
+              <div className="route-analysis-main">
+                <span className="eyebrow">
+                  SELECTED CORRIDOR
+                </span>
 
-              <div className="big-percentage">
-                {selectedRoute.occupancy}%
-              </div>
+                <div className="big-percentage">
+                  {selectedRoute.occupancy}%
+                </div>
 
-              <div
-                className={`large-status ${getStatusClass(
-                  selectedRoute.status
-                )}`}
-              >
-                {getStatusLabel(selectedRoute.status)} crowd
-              </div>
+                <div
+                  className={`large-status ${getStatusClass(
+                    selectedRoute.status
+                  )}`}
+                >
+                  {getStatusLabel(
+                    selectedRoute.status
+                  )}{" "}
+                  crowd
+                </div>
 
-              <div className="occupancy-track">
-                <span
+                <div className="occupancy-track">
+                  <span
+                    style={{
+                      width: `${selectedRoute.occupancy}%`,
+                    }}
+                  />
+                </div>
+
+                <p
                   style={{
-                    width: `${selectedRoute.occupancy}%`,
+                    color: "#657181",
+                    fontSize: "9px",
+                    lineHeight: "1.7",
+                    marginTop: "18px",
                   }}
+                >
+                  {selectedRoute.occupancy >=
+                  85
+                    ? "Passenger density is approaching the operational capacity threshold. Consider dispatching additional vehicles."
+                    : selectedRoute.occupancy >=
+                        70
+                      ? "Crowd levels are elevated. AI monitoring recommends checking demand in the next prediction window."
+                      : "Passenger flow is currently within a manageable operating range."}
+                </p>
+              </div>
+
+              <div className="analysis-stats">
+                <InfoStat
+                  label="PASSENGERS / BUS"
+                  value={`${selectedRoute.passengers}`}
+                />
+
+                <InfoStat
+                  label="BUS CAPACITY"
+                  value={`${selectedRoute.capacity}`}
+                />
+
+                <InfoStat
+                  label="ACTIVE BUSES"
+                  value={`${selectedRoute.buses}`}
+                />
+
+                <InfoStat
+                  label="FREQUENCY"
+                  value={
+                    selectedRoute.frequency
+                  }
+                />
+
+                <InfoStat
+                  label="DEMAND TREND"
+                  value={`${
+                    selectedRoute.trend > 0
+                      ? "+"
+                      : ""
+                  }${selectedRoute.trend}%`}
+                />
+
+                <InfoStat
+                  label="AI RISK LEVEL"
+                  value={getStatusLabel(
+                    selectedRoute.status
+                  )}
                 />
               </div>
-
-              <p
-                style={{
-                  color: "#657181",
-                  fontSize: "9px",
-                  lineHeight: "1.7",
-                  marginTop: "18px",
-                }}
-              >
-                {selectedRoute.occupancy >= 85
-                  ? "Passenger density is approaching the operational capacity threshold. Consider dispatching additional vehicles."
-                  : selectedRoute.occupancy >= 70
-                    ? "Crowd levels are elevated. AI monitoring recommends checking demand in the next prediction window."
-                    : "Passenger flow is currently within a manageable operating range."}
-              </p>
             </div>
-
-            <div className="analysis-stats">
-              <InfoStat
-                label="PASSENGERS / BUS"
-                value={`${selectedRoute.passengers}`}
-              />
-
-              <InfoStat
-                label="BUS CAPACITY"
-                value={`${selectedRoute.capacity}`}
-              />
-
-              <InfoStat
-                label="ACTIVE BUSES"
-                value={`${selectedRoute.buses}`}
-              />
-
-              <InfoStat
-                label="FREQUENCY"
-                value={selectedRoute.frequency}
-              />
-
-              <InfoStat
-                label="DEMAND TREND"
-                value={`${selectedRoute.trend > 0 ? "+" : ""}${selectedRoute.trend}%`}
-              />
-
-              <InfoStat
-                label="AI RISK LEVEL"
-                value={getStatusLabel(selectedRoute.status)}
-              />
-            </div>
-          </div>
+          )}
         </section>
 
         {/* =================================================
-            STOPS
+            STOPS + PREDICTION
         ================================================= */}
 
         <div className="two-panel-grid">
           <section className="panel">
             <div className="panel-header">
               <div>
-                <span className="eyebrow">PASSENGER NODES</span>
-                <h2>High-impact stops</h2>
+                <span className="eyebrow">
+                  PASSENGER NODES
+                </span>
+
+                <h2>
+                  High-impact stops
+                </h2>
               </div>
 
-              <span className="data-badge">8 STOPS</span>
+              <span className="data-badge">
+                8 STOPS
+              </span>
             </div>
 
             <div className="stop-list">
@@ -726,26 +1195,39 @@ function App() {
                 <button
                   key={stop.id}
                   className={`stop-item ${
-                    selectedStop.id === stop.id
+                    selectedStop.id ===
+                    stop.id
                       ? "selected"
                       : ""
                   }`}
-                  onClick={() => setSelectedStop(stop)}
+                  onClick={() =>
+                    setSelectedStop(
+                      stop
+                    )
+                  }
                 >
                   <span className="stop-number">
                     0{stop.id}
                   </span>
 
                   <span className="stop-details">
-                    <strong>{stop.name}</strong>
+                    <strong>
+                      {stop.name}
+                    </strong>
+
                     <span>
-                      {stop.area} · {stop.routes.join(" / ")}
+                      {stop.area} ·{" "}
+                      {stop.routes.join(
+                        " / "
+                      )}
                     </span>
                   </span>
 
                   <span
                     className={getStatusClass(
-                      getPredictionStatus(stop.crowd)
+                      getPredictionStatus(
+                        stop.crowd
+                      )
                     )}
                     style={{
                       fontSize: "9px",
@@ -755,134 +1237,203 @@ function App() {
                     {stop.crowd}%
                   </span>
 
-                  <span className="stop-arrow">→</span>
+                  <span className="stop-arrow">
+                    →
+                  </span>
                 </button>
               ))}
             </div>
           </section>
 
-          <section className="prediction-panel" id="page-prediction">
+          <section
+            className="prediction-panel"
+            id="page-prediction"
+          >
             <div>
-              <span className="eyebrow">PREDICTIVE ENGINE</span>
-              <h2>AI Crowd Forecast</h2>
+              <span className="eyebrow">
+                PREDICTIVE ENGINE
+              </span>
+
+              <h2>
+                AI Crowd Forecast
+              </h2>
 
               <p>
-                Select a route and prediction horizon to estimate
-                future passenger occupancy.
+                Select a route and prediction
+                horizon to estimate future
+                passenger occupancy.
               </p>
 
-              <div className="prediction-target">
-                <span>SELECTED ROUTE</span>
-                <strong>
-                  {selectedRoute.id} · {selectedRoute.name}
-                </strong>
-                <small>
-                  Current occupancy: {selectedRoute.occupancy}%
-                </small>
-              </div>
+              {selectedRoute && (
+                <>
+                  <div className="prediction-target">
+                    <span>
+                      SELECTED ROUTE
+                    </span>
 
-              <div className="prediction-target">
-                <span>FORECAST HORIZON</span>
-
-                <select
-                  value={predictionMinutes}
-                  onChange={(event) =>
-                    setPredictionMinutes(
-                      Number(event.target.value)
-                    )
-                  }
-                  style={{
-                    width: "100%",
-                    marginTop: "7px",
-                    padding: "8px",
-                    border: "1px solid #253027",
-                    borderRadius: "6px",
-                    background: "#0a100e",
-                    color: "#dfe6df",
-                    outline: "none",
-                    fontSize: "9px",
-                  }}
-                >
-                  <option value={10}>Next 10 minutes</option>
-                  <option value={20}>Next 20 minutes</option>
-                  <option value={30}>Next 30 minutes</option>
-                  <option value={45}>Next 45 minutes</option>
-                  <option value={60}>Next 60 minutes</option>
-                </select>
-              </div>
-
-              <button
-                className="primary-button full"
-                onClick={runPrediction}
-                disabled={isPredicting}
-              >
-                {isPredicting ? (
-                  <>
-                    <span className="loader" />
-                    Analyzing network...
-                  </>
-                ) : (
-                  <>
-                    <span>◈</span>
-                    Generate Prediction
-                  </>
-                )}
-              </button>
-
-              {prediction && (
-                <div className="prediction-result">
-                  <div className="prediction-result-top">
-                    <span
-                      className={`prediction-dot ${prediction.status}`}
-                    />
-
-                    <div>
-                      <span>FORECAST OCCUPANCY</span>
-
-                      <strong>
-                        {prediction.value}% ·{" "}
-                        {getStatusLabel(prediction.status)}
-                      </strong>
-                    </div>
-
-                    <b>{prediction.confidence}%</b>
-                  </div>
-
-                  <div className="prediction-track">
-                    <span
-                      style={{
-                        width: `${prediction.value}%`,
-                      }}
-                    />
-                  </div>
-
-                  <div className="prediction-horizon">
-                    Forecast for{" "}
                     <strong>
-                      {predictionMinutes} minutes
-                    </strong>{" "}
-                    from now
+                      {selectedRoute.id} ·{" "}
+                      {selectedRoute.name}
+                    </strong>
+
+                    <small>
+                      Current occupancy:{" "}
+                      {
+                        selectedRoute.occupancy
+                      }
+                      %
+                    </small>
                   </div>
 
-                  <div className="recommendation-box">
-                    <span>✦</span>
+                  <div className="prediction-target">
+                    <span>
+                      FORECAST HORIZON
+                    </span>
 
-                    <p>
-                      {prediction.value >= 85
-                        ? "AI recommends preparing additional capacity and monitoring this corridor closely."
-                        : prediction.value >= 70
-                          ? "AI recommends increasing monitoring frequency and preparing for elevated demand."
-                          : "Current forecast remains manageable. Normal operations can continue."}
-                    </p>
+                    <select
+                      value={
+                        predictionMinutes
+                      }
+                      onChange={(event) =>
+                        setPredictionMinutes(
+                          Number(
+                            event.target
+                              .value
+                          )
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        marginTop: "7px",
+                        padding: "8px",
+                        border:
+                          "1px solid #253027",
+                        borderRadius:
+                          "6px",
+                        background:
+                          "#0a100e",
+                        color:
+                          "#dfe6df",
+                        outline: "none",
+                        fontSize: "9px",
+                      }}
+                    >
+                      <option value={10}>
+                        Next 10 minutes
+                      </option>
+
+                      <option value={20}>
+                        Next 20 minutes
+                      </option>
+
+                      <option value={30}>
+                        Next 30 minutes
+                      </option>
+
+                      <option value={45}>
+                        Next 45 minutes
+                      </option>
+
+                      <option value={60}>
+                        Next 60 minutes
+                      </option>
+                    </select>
                   </div>
-                </div>
-              )}
 
-              {!prediction && !isPredicting && (
-                <div className="prediction-empty">
-                  Run the AI model to generate a forecast for this
-                  route.
-                </div>
+                  <button
+                    className="primary-button full"
+                    onClick={
+                      runPrediction
+                    }
+                    disabled={
+                      isPredicting
+                    }
+                  >
+                    {isPredicting ? (
+                      <>
+                        <span className="loader" />
+                        Saving to AI database...
+                      </>
+                    ) : (
+                      <>
+                        <span>◈</span>
+                        Generate Prediction
+                      </>
+                    )}
+                  </button>
+
+                  {prediction && (
+                    <div className="prediction-result">
+                      <div className="prediction-result-top">
+                        <span
+                          className={`prediction-dot ${prediction.status}`}
+                        />
+
+                        <div>
+                          <span>
+                            FORECAST OCCUPANCY
+                          </span>
+
+                          <strong>
+                            {prediction.value}% ·{" "}
+                            {getStatusLabel(
+                              prediction.status
+                            )}
+                          </strong>
+                        </div>
+
+                        <b>
+                          {
+                            prediction.confidence
+                          }
+                          %
+                        </b>
+                      </div>
+
+                      <div className="prediction-track">
+                        <span
+                          style={{
+                            width: `${prediction.value}%`,
+                          }}
+                        />
+                      </div>
+
+                      <div className="prediction-horizon">
+                        Forecast for{" "}
+                        <strong>
+                          {predictionMinutes}{" "}
+                          minutes
+                        </strong>{" "}
+                        from now
+                      </div>
+
+                      <div className="recommendation-box">
+                        <span>✦</span>
+
+                        <p>
+                          {prediction.value >=
+                          85
+                            ? "AI recommends preparing additional capacity and monitoring this corridor closely."
+                            : prediction.value >=
+                                70
+                              ? "AI recommends increasing monitoring frequency and preparing for elevated demand."
+                              : "Current forecast remains manageable. Normal operations can continue."}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {!prediction &&
+                    !isPredicting && (
+                      <div className="prediction-empty">
+                        Run the AI model to
+                        generate a forecast for
+                        this route. The result
+                        will also be saved in
+                        Supabase.
+                      </div>
+                    )}
+                </>
               )}
             </div>
           </section>
@@ -892,22 +1443,35 @@ function App() {
             ANALYTICS
         ================================================= */}
 
-        <section className="panel" id="page-analytics">
+        <section
+          className="panel"
+          id="page-analytics"
+        >
           <div className="panel-header">
             <div>
               <span className="eyebrow">
                 HISTORICAL DEMAND MODEL
               </span>
-              <h2>Network demand analytics</h2>
+
+              <h2>
+                Network demand analytics
+              </h2>
             </div>
 
-            <span className="data-badge">TODAY</span>
+            <span className="data-badge">
+              TODAY
+            </span>
           </div>
 
           <div className="demand-chart">
             {DEMAND_DATA.map((item) => (
-              <div className="chart-column" key={item.time}>
-                <span>{item.value}%</span>
+              <div
+                className="chart-column"
+                key={item.time}
+              >
+                <span>
+                  {item.value}%
+                </span>
 
                 <div className="chart-bar-area">
                   <div
@@ -919,7 +1483,9 @@ function App() {
                   />
                 </div>
 
-                <small>{item.time}</small>
+                <small>
+                  {item.time}
+                </small>
               </div>
             ))}
           </div>
@@ -931,7 +1497,9 @@ function App() {
           />
 
           <div className="insight">
-            <div className="insight-number">94%</div>
+            <div className="insight-number">
+              94%
+            </div>
 
             <div>
               <strong>
@@ -939,10 +1507,13 @@ function App() {
               </strong>
 
               <p>
-                Historical patterns show the strongest demand
-                between 08:00–10:00 and 17:00–19:00. CrowdWise
-                automatically increases monitoring sensitivity
-                during these windows.
+                Historical patterns show the
+                strongest demand between
+                08:00–10:00 and 17:00–19:00.
+                CrowdWise automatically
+                increases monitoring
+                sensitivity during these
+                windows.
               </p>
             </div>
           </div>
@@ -958,20 +1529,24 @@ function App() {
               <span className="eyebrow">
                 OPERATIONAL SIGNALS
               </span>
-              <h2>Smart alerts.</h2>
+
+              <h2>
+                Smart alerts.
+              </h2>
 
               <p>
-                Important network events detected by the
-                CrowdWise intelligence engine.
+                Important network events
+                detected by the CrowdWise
+                intelligence engine.
               </p>
             </div>
           </div>
 
           <div className="alert-list">
-            {ALERTS.map((alert, index) => (
+            {alerts.map((alert) => (
               <div
                 className={`alert-card ${alert.type}`}
-                key={index}
+                key={alert.id}
               >
                 <div className="alert-indicator">
                   {alert.icon}
@@ -979,24 +1554,41 @@ function App() {
 
                 <div className="alert-main">
                   <div className="alert-title-row">
-                    <strong>{alert.title}</strong>
-                    <span>{alert.time}</span>
+                    <strong>
+                      {alert.title}
+                    </strong>
+
+                    <span>
+                      {alert.time}
+                    </span>
                   </div>
 
-                  <b>ROUTE {alert.route}</b>
+                  <b>
+                    ROUTE{" "}
+                    {alert.route_id ||
+                      "NETWORK"}
+                  </b>
 
-                  <p>{alert.description}</p>
+                  <p>
+                    {alert.description}
+                  </p>
                 </div>
 
                 <button
                   className="text-button"
-                  onClick={() =>
+                  onClick={() => {
+                    const route =
+                      routes.find(
+                        (item) =>
+                          item.id ===
+                          alert.route_id
+                      );
+
                     selectRoute(
-                      ROUTES.find(
-                        (route) => route.id === alert.route
-                      ) || ROUTES[0]
-                    )
-                  }
+                      route ||
+                        routes[0]
+                    );
+                  }}
                 >
                   Inspect →
                 </button>
@@ -1015,10 +1607,15 @@ function App() {
               <span className="eyebrow">
                 PLATFORM STATUS
               </span>
-              <h2>System health</h2>
+
+              <h2>
+                System health
+              </h2>
             </div>
 
-            <span className="data-badge">ALL SYSTEMS</span>
+            <span className="data-badge">
+              ALL SYSTEMS
+            </span>
           </div>
 
           <div className="system-health-grid">
@@ -1030,7 +1627,14 @@ function App() {
 
             <HealthCard
               title="Live Bus Telemetry"
-              description="56 active vehicle signals received."
+              description={`${routes.reduce(
+                (sum, route) =>
+                  sum +
+                  Number(
+                    route.buses || 0
+                  ),
+                0
+              )} active vehicle signals received.`}
               status="Operational"
             />
 
@@ -1041,10 +1645,18 @@ function App() {
             />
 
             <HealthCard
-              title="Model Monitoring"
-              description="Minor latency detected in one node."
-              status="Watch"
-              warning
+              title="Supabase Database"
+              description="Routes, predictions and alerts stored remotely."
+              status={
+                databaseError
+                  ? "Watch"
+                  : "Operational"
+              }
+              warning={
+                Boolean(
+                  databaseError
+                )
+              }
             />
           </div>
 
@@ -1069,24 +1681,37 @@ function App() {
 
             <ArchitectureStep
               number="04"
-              title="Act"
-              text="Operators receive clear recommendations and alerts."
+              title="Store"
+              text="Supabase stores predictions, crowd readings and alerts."
             />
           </div>
         </section>
 
+        {/* =================================================
+            FOOTER
+        ================================================= */}
+
         <footer>
           <div>
-            <strong>CrowdWise</strong>
-            <span>AI-powered public transport intelligence</span>
+            <strong>
+              CrowdWise
+            </strong>
+
+            <span>
+              AI-powered public transport
+              intelligence
+            </span>
           </div>
 
           <div className="footer-center">
-            Model v2.4.1 · Data refreshed {formattedTime}
+            Model v2.4.1 · Data refreshed{" "}
+            {formattedTime}
           </div>
 
           <div>
-            <span>Privacy-first architecture</span>
+            <span>
+              Privacy-first architecture
+            </span>
           </div>
         </footer>
       </main>
@@ -1095,7 +1720,7 @@ function App() {
 }
 
 /* =========================================================
-   COMPONENTS
+   METRIC CARD
 ========================================================= */
 
 function MetricCard({
@@ -1107,11 +1732,21 @@ function MetricCard({
 }) {
   return (
     <div className="metric-card">
-      <div className="metric-icon">{icon}</div>
+      <div className="metric-icon">
+        {icon}
+      </div>
 
-      <span className="metric-label">{label}</span>
+      <span className="metric-label">
+        {label}
+      </span>
 
-      <strong className={danger ? "danger-text" : ""}>
+      <strong
+        className={
+          danger
+            ? "danger-text"
+            : ""
+        }
+      >
         {value}
       </strong>
 
@@ -1120,51 +1755,79 @@ function MetricCard({
   );
 }
 
-function DecisionSupport({ route, predictionValue }) {
-  const status = getPredictionStatus(predictionValue);
+/* =========================================================
+   DECISION SUPPORT
+========================================================= */
 
-  let title = "Network operating within target";
+function DecisionSupport({
+  route,
+  predictionValue,
+}) {
+  const status =
+    getPredictionStatus(
+      predictionValue
+    );
+
+  let title =
+    "Network operating within target";
+
   let description =
     "Passenger demand is currently manageable. Continue standard monitoring across the active network.";
 
   if (status === "moderate") {
-    title = "Demand beginning to rise";
+    title =
+      "Demand beginning to rise";
+
     description =
       "CrowdWise detects increasing passenger demand. Monitor the selected corridor before the next peak window.";
   }
 
   if (status === "high") {
-    title = "Prepare for elevated demand";
+    title =
+      "Prepare for elevated demand";
+
     description =
       "The AI model expects high occupancy. Consider increasing vehicle frequency on the selected route.";
   }
 
   if (status === "critical") {
-    title = "Immediate capacity attention recommended";
+    title =
+      "Immediate capacity attention recommended";
+
     description =
       "Predicted occupancy is close to operational capacity. Dispatch planning should prioritize this corridor.";
   }
 
   return (
     <div className="decision-panel">
-      <div className="decision-icon">✦</div>
+      <div className="decision-icon">
+        ✦
+      </div>
 
       <div className="decision-copy">
-        <span className="eyebrow">AI DECISION SUPPORT</span>
+        <span className="eyebrow">
+          AI DECISION SUPPORT
+        </span>
 
         <h3>{title}</h3>
 
         <p>
           {description} Current focus:{" "}
-          <strong style={{ color: "#b9c4b8" }}>
-            Route {route.id}
+          <strong
+            style={{
+              color: "#b9c4b8",
+            }}
+          >
+            Route {route?.id || "—"}
           </strong>
           .
         </p>
       </div>
 
       <span
-        className={`status-pill ${getStatusClass(status)}`}
+        className={`status-pill ${getStatusClass(
+          status
+        )}`}
       >
         {getStatusLabel(status)}
       </span>
@@ -1172,7 +1835,14 @@ function DecisionSupport({ route, predictionValue }) {
   );
 }
 
-function InfoStat({ label, value }) {
+/* =========================================================
+   INFO STAT
+========================================================= */
+
+function InfoStat({
+  label,
+  value,
+}) {
   return (
     <div className="info-stat">
       <span>{label}</span>
@@ -1180,6 +1850,10 @@ function InfoStat({ label, value }) {
     </div>
   );
 }
+
+/* =========================================================
+   HEALTH CARD
+========================================================= */
 
 function HealthCard({
   title,
@@ -1189,16 +1863,27 @@ function HealthCard({
 }) {
   return (
     <div className="health-card">
-      <span className={`health-dot ${warning ? "warning" : ""}`} />
+      <span
+        className={`health-dot ${
+          warning
+            ? "warning"
+            : ""
+        }`}
+      />
 
       <div>
         <strong>{title}</strong>
-        <small>{description}</small>
+
+        <small>
+          {description}
+        </small>
       </div>
 
       <span
         className={`health-status ${
-          warning ? "warning" : ""
+          warning
+            ? "warning"
+            : ""
         }`}
       >
         {status}
@@ -1207,10 +1892,20 @@ function HealthCard({
   );
 }
 
-function ArchitectureStep({ number, title, text }) {
+/* =========================================================
+   ARCHITECTURE STEP
+========================================================= */
+
+function ArchitectureStep({
+  number,
+  title,
+  text,
+}) {
   return (
     <div className="architecture-step">
-      <span className="architecture-number">{number}</span>
+      <span className="architecture-number">
+        {number}
+      </span>
 
       <strong>{title}</strong>
 
@@ -1220,7 +1915,7 @@ function ArchitectureStep({ number, title, text }) {
 }
 
 /* =========================================================
-   NETWORK VISUALIZATION
+   NETWORK MAP
 ========================================================= */
 
 function NetworkMap({
@@ -1250,7 +1945,8 @@ function NetworkMap({
         viewBox="0 0 100 100"
         preserveAspectRatio="none"
         style={{
-          position: "absolute",
+          position:
+            "absolute",
           inset: 0,
           width: "100%",
           height: "100%",
@@ -1279,110 +1975,176 @@ function NetworkMap({
         />
       </svg>
 
-      {positions.map((position, index) => {
-        const route = routes[index];
+      {routes
+        .slice(0, 6)
+        .map((route, index) => {
+          const position =
+            positions[index];
 
-        return (
-          <button
-            key={route.id}
-            onClick={() => onSelectRoute(route)}
-            title={`${route.id} · ${route.occupancy}%`}
-            style={{
-              position: "absolute",
-              left: `${position.x}%`,
-              top: `${position.y}%`,
-              transform: "translate(-50%, -50%)",
-              width:
-                selectedRoute.id === route.id ? "52px" : "42px",
-              height:
-                selectedRoute.id === route.id ? "52px" : "42px",
-              borderRadius: "50%",
-              border:
-                selectedRoute.id === route.id
+          if (!position) return null;
+
+          const isSelected =
+            selectedRoute?.id ===
+            route.id;
+
+          return (
+            <button
+              key={route.id}
+              onClick={() =>
+                onSelectRoute(
+                  route
+                )
+              }
+              title={`${route.id} · ${route.occupancy}%`}
+              style={{
+                position:
+                  "absolute",
+
+                left: `${position.x}%`,
+
+                top: `${position.y}%`,
+
+                transform:
+                  "translate(-50%, -50%)",
+
+                width: isSelected
+                  ? "52px"
+                  : "42px",
+
+                height: isSelected
+                  ? "52px"
+                  : "42px",
+
+                borderRadius:
+                  "50%",
+
+                border: isSelected
                   ? "2px solid #eaff4f"
                   : "1px solid #34412d",
-              background:
-                selectedRoute.id === route.id
-                  ? "#172014"
-                  : "#101712",
-              color:
-                route.status === "critical"
-                  ? "#ed656d"
-                  : route.status === "high"
-                    ? "#e5a04e"
-                    : route.status === "moderate"
-                      ? "#e5d05d"
-                      : "#72d58b",
-              cursor: "pointer",
-              zIndex: 5,
-              boxShadow:
-                selectedRoute.id === route.id
+
+                background:
+                  isSelected
+                    ? "#172014"
+                    : "#101712",
+
+                color:
+                  route.status ===
+                  "critical"
+                    ? "#ed656d"
+                    : route.status ===
+                        "high"
+                      ? "#e5a04e"
+                      : route.status ===
+                          "moderate"
+                        ? "#e5d05d"
+                        : "#72d58b",
+
+                cursor:
+                  "pointer",
+
+                zIndex: 5,
+
+                boxShadow: isSelected
                   ? "0 0 28px rgba(234,255,79,.16)"
                   : "none",
-              transition: "all .25s ease",
-            }}
-          >
-            <strong
-              style={{
-                display: "block",
-                fontSize:
-                  selectedRoute.id === route.id
-                    ? "10px"
-                    : "8px",
-              }}
-            >
-              {route.id}
-            </strong>
 
-            <small
-              style={{
-                display: "block",
-                marginTop: "2px",
-                fontSize: "6px",
-                opacity: 0.75,
+                transition:
+                  "all .25s ease",
               }}
             >
-              {route.occupancy}%
-            </small>
-          </button>
-        );
-      })}
+              <strong
+                style={{
+                  display:
+                    "block",
+
+                  fontSize:
+                    isSelected
+                      ? "10px"
+                      : "8px",
+                }}
+              >
+                {route.id}
+              </strong>
+
+              <small
+                style={{
+                  display:
+                    "block",
+
+                  marginTop:
+                    "2px",
+
+                  fontSize:
+                    "6px",
+
+                  opacity:
+                    0.75,
+                }}
+              >
+                {route.occupancy}%
+              </small>
+            </button>
+          );
+        })}
 
       <div className="map-center">
-        <div className="map-pulse">⌁</div>
+        <div className="map-pulse">
+          ⌁
+        </div>
 
-        <strong>Chennai Network</strong>
+        <strong>
+          Chennai Network
+        </strong>
 
         <span>
-          Live route intelligence across the monitored bus
-          network.
+          Live route intelligence
+          across the monitored
+          bus network.
         </span>
 
         <span
           className="status-pill status-low"
           style={{
-            border: "1px solid #273528",
+            border:
+              "1px solid #273528",
           }}
         >
-          ● SYSTEM ONLINE
+          ● DATABASE ONLINE
         </span>
       </div>
 
       <div
         style={{
-          position: "absolute",
+          position:
+            "absolute",
+
           left: "18px",
+
           bottom: "16px",
-          padding: "8px 10px",
-          border: "1px solid #222c34",
-          borderRadius: "7px",
-          background: "rgba(8,12,17,.9)",
-          color: "#657181",
+
+          padding:
+            "8px 10px",
+
+          border:
+            "1px solid #222c34",
+
+          borderRadius:
+            "7px",
+
+          background:
+            "rgba(8,12,17,.9)",
+
+          color:
+            "#657181",
+
           fontSize: "7px",
-          letterSpacing: ".5px",
+
+          letterSpacing:
+            ".5px",
         }}
       >
-        LIVE NETWORK VIEW · {routes.length} ROUTES
+        LIVE DATABASE VIEW ·{" "}
+        {routes.length} ROUTES
       </div>
     </div>
   );

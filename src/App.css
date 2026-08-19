@@ -1969,3 +1969,347 @@ footer strong {
     gap: 3px;
   }
 }
+/* =====================================================
+   REAL CROWDWISE MAP
+===================================================== */
+
+.real-network-map {
+  position: relative;
+  width: 100%;
+  height: 470px;
+  overflow: hidden;
+  border-radius: 11px;
+  background: #10151c;
+}
+
+.crowdwise-map {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.leaflet-container {
+  font-family: Inter, Arial, sans-serif;
+}
+
+.leaflet-control-zoom {
+  border: none !important;
+}
+
+.leaflet-control-zoom a {
+  background: #0c1118 !important;
+  color: #dfe6df !important;
+  border-color: #29333e !important;
+}
+
+.leaflet-control-attribution {
+  background: rgba(6, 9, 14, 0.85) !important;
+  color: #667181 !important;
+  font-size: 7px !important;
+}
+
+.leaflet-control-attribution a {
+  color: #8c9a86 !important;
+}
+
+.map-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  pointer-events: none;
+}
+
+.map-title {
+  position: absolute;
+  top: 15px;
+  left: 15px;
+  padding: 12px 14px;
+  border: 1px solid rgba(38, 48, 58, 0.9);
+  border-radius: 9px;
+  background: rgba(8, 12, 17, 0.92);
+  backdrop-filter: blur(8px);
+}
+
+.map-title strong {
+  display: block;
+  margin-top: 5px;
+  color: #eef2ee;
+  font-size: 11px;
+}
+
+.gps-panel {
+  position: absolute;
+  right: 15px;
+  bottom: 15px;
+  width: min(280px, calc(100% - 30px));
+  padding: 13px;
+  border: 1px solid #29342b;
+  border-radius: 10px;
+  background: rgba(8, 13, 11, 0.94);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+.gps-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #b6c1b7;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.7px;
+}
+
+.gps-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #596575;
+}
+
+.gps-live-dot.active {
+  background: #a8e85c;
+  box-shadow: 0 0 12px #a8e85c;
+}
+
+.gps-data {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-top: 10px;
+  color: #78867b;
+  font-size: 7px;
+}
+
+.gps-data span:last-child {
+  grid-column: 1 / -1;
+}
+
+.gps-button {
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px;
+  border: 1px solid #37442f;
+  border-radius: 6px;
+  background: #182015;
+  color: #eaff4f;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.gps-button:hover {
+  background: #202b1b;
+}
+
+.gps-error {
+  margin-top: 8px;
+  padding: 7px;
+  border: 1px solid #492326;
+  border-radius: 5px;
+  background: #201214;
+  color: #e68d93;
+  font-size: 7px;
+  line-height: 1.5;
+}
+
+/* =====================================================
+   GPS MARKER
+===================================================== */
+
+.gps-marker-wrapper {
+  background: transparent !important;
+  border: none !important;
+}
+
+.gps-marker {
+  position: relative;
+  width: 30px;
+  height: 30px;
+}
+
+.gps-marker-pulse {
+  position: absolute;
+  inset: 0;
+  border: 2px solid #eaff4f;
+  border-radius: 50%;
+  opacity: 0.35;
+  animation: gpsPulse 1.8s infinite;
+}
+
+.gps-marker-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  border: 3px solid #0b100d;
+  border-radius: 50%;
+  background: #eaff4f;
+  box-shadow: 0 0 15px rgba(234, 255, 79, 0.9);
+}
+
+@keyframes gpsPulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+
+  70% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* =====================================================
+   RESPONSIVE MAP
+===================================================== */
+
+@media (max-width: 750px) {
+
+  .real-network-map {
+    height: 420px;
+  }
+
+  .map-title {
+    top: 10px;
+    left: 10px;
+  }
+
+  .gps-panel {
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+  }
+
+  .gps-data {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .gps-data span:last-child {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 480px) {
+
+  .real-network-map {
+    height: 390px;
+  }
+
+  .map-title {
+    padding: 9px 10px;
+  }
+
+  .map-title strong {
+    font-size: 9px;
+  }
+
+  .gps-panel {
+    padding: 10px;
+  }
+}
+/* =====================================================
+   CROWDWISE READABILITY IMPROVEMENTS
+===================================================== */
+
+@media (min-width: 751px) {
+
+  .nav-item {
+    font-size: 12px;
+  }
+
+  .brand span {
+    font-size: 10px;
+  }
+
+  .eyebrow {
+    font-size: 9px;
+  }
+
+  .hero p {
+    font-size: 13px;
+  }
+
+  .metric-label {
+    font-size: 8px;
+  }
+
+  .metric-card > span:last-child {
+    font-size: 9px;
+  }
+
+  .route-name {
+    font-size: 11px;
+  }
+
+  .route-status-info strong {
+    font-size: 9px;
+  }
+
+  .route-status-info span {
+    font-size: 8px;
+  }
+
+  .page-intro p {
+    font-size: 11px;
+  }
+
+  .prediction-panel > div > p {
+    font-size: 10px;
+  }
+
+  .prediction-target span {
+    font-size: 8px;
+  }
+
+  .prediction-target strong {
+    font-size: 11px;
+  }
+
+  .prediction-target small {
+    font-size: 8px;
+  }
+
+  .decision-copy p {
+    font-size: 10px;
+  }
+
+  .info-stat span {
+    font-size: 8px;
+  }
+
+  .info-stat strong {
+    font-size: 11px;
+  }
+
+  .alert-title-row strong {
+    font-size: 11px;
+  }
+
+  .alert-main p {
+    font-size: 9px;
+  }
+
+  .health-card strong {
+    font-size: 10px;
+  }
+
+  .health-card small {
+    font-size: 8px;
+  }
+
+  .architecture-step strong {
+    font-size: 11px;
+  }
+
+  .architecture-step p {
+    font-size: 9px;
+  }
+}
