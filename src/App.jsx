@@ -3,7 +3,6 @@ import { supabase } from "./supabaseClient";
 
 /* =========================================================
    FALLBACK DATA
-   Used if Supabase is temporarily unavailable.
 ========================================================= */
 
 const FALLBACK_ROUTES = [
@@ -255,35 +254,90 @@ function formatTimeAgo(dateValue) {
 }
 
 /* =========================================================
+   CREATE FRESH REALISTIC NETWORK LOAD
+========================================================= */
+
+function generateFreshNetworkLoad() {
+  const hour = new Date().getHours();
+
+  let base;
+
+  if (hour >= 6 && hour < 9) {
+    base = 62;
+  } else if (hour >= 9 && hour < 12) {
+    base = 55;
+  } else if (hour >= 12 && hour < 16) {
+    base = 50;
+  } else if (hour >= 16 && hour < 20) {
+    base = 72;
+  } else if (hour >= 20 && hour < 23) {
+    base = 58;
+  } else {
+    base = 35;
+  }
+
+  const randomVariation =
+    Math.floor(Math.random() * 15) - 7;
+
+  const freshValue = base + randomVariation;
+
+  return Math.max(
+    15,
+    Math.min(95, freshValue)
+  );
+}
+
+/* =========================================================
    APP
 ========================================================= */
 
 function App() {
-  const [routes, setRoutes] = useState(FALLBACK_ROUTES);
-
-  const [selectedRoute, setSelectedRoute] = useState(
-    FALLBACK_ROUTES[1]
+  const [routes, setRoutes] = useState(
+    FALLBACK_ROUTES
   );
 
-  const [selectedStop, setSelectedStop] = useState(STOPS[0]);
+  const [selectedRoute, setSelectedRoute] =
+    useState(FALLBACK_ROUTES[1]);
 
-  const [activePage, setActivePage] = useState("overview");
+  const [selectedStop, setSelectedStop] =
+    useState(STOPS[0]);
 
-  const [predictionMinutes, setPredictionMinutes] = useState(20);
+  const [activePage, setActivePage] =
+    useState("overview");
 
-  const [isPredicting, setIsPredicting] = useState(false);
+  const [predictionMinutes, setPredictionMinutes] =
+    useState(20);
 
-  const [prediction, setPrediction] = useState(null);
+  const [isPredicting, setIsPredicting] =
+    useState(false);
 
-  const [notifications, setNotifications] = useState(3);
+  const [prediction, setPrediction] =
+    useState(null);
 
-  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [notifications, setNotifications] =
+    useState(3);
 
-  const [alerts, setAlerts] = useState(DEFAULT_ALERTS);
+  const [lastUpdated, setLastUpdated] =
+    useState(new Date());
 
-  const [loadingRoutes, setLoadingRoutes] = useState(true);
+  const [alerts, setAlerts] =
+    useState(DEFAULT_ALERTS);
 
-  const [databaseError, setDatabaseError] = useState("");
+  const [loadingRoutes, setLoadingRoutes] =
+    useState(true);
+
+  const [databaseError, setDatabaseError] =
+    useState("");
+
+  /*
+   * NEW:
+   * Fresh network load generated whenever
+   * the website starts.
+   */
+  const [networkLoad, setNetworkLoad] =
+    useState(() =>
+      generateFreshNetworkLoad()
+    );
 
   /* =======================================================
      LOAD ROUTES FROM SUPABASE
@@ -298,7 +352,10 @@ function App() {
       .order("id", { ascending: true });
 
     if (error) {
-      console.error("Supabase routes error:", error);
+      console.error(
+        "Supabase routes error:",
+        error
+      );
 
       setDatabaseError(
         "Database connection unavailable. Showing local CrowdWise data."
@@ -310,32 +367,61 @@ function App() {
     }
 
     if (data && data.length > 0) {
-      const formattedRoutes = data.map((route) => ({
-        id: route.id,
-        name: route.name,
-        short: route.short || route.name,
-        occupancy: Number(route.occupancy || 0),
-        buses: Number(route.buses || 0),
-        frequency: route.frequency || "10 min",
-        status:
-          route.status ||
-          getPredictionStatus(Number(route.occupancy || 0)),
-        passengers: Number(route.passengers || 0),
-        capacity: Number(route.capacity || 74),
-        trend: Number(route.trend || 0),
-        color:
-          route.color ||
-          getPredictionStatus(Number(route.occupancy || 0)),
-      }));
+      const formattedRoutes = data.map(
+        (route) => ({
+          id: route.id,
+          name: route.name,
+          short:
+            route.short || route.name,
+          occupancy: Number(
+            route.occupancy || 0
+          ),
+          buses: Number(
+            route.buses || 0
+          ),
+          frequency:
+            route.frequency ||
+            "10 min",
+          status:
+            route.status ||
+            getPredictionStatus(
+              Number(
+                route.occupancy || 0
+              )
+            ),
+          passengers: Number(
+            route.passengers || 0
+          ),
+          capacity: Number(
+            route.capacity || 74
+          ),
+          trend: Number(
+            route.trend || 0
+          ),
+          color:
+            route.color ||
+            getPredictionStatus(
+              Number(
+                route.occupancy || 0
+              )
+            ),
+        })
+      );
 
       setRoutes(formattedRoutes);
 
       setSelectedRoute((current) => {
-        const matchingRoute = formattedRoutes.find(
-          (route) => route.id === current?.id
-        );
+        const matchingRoute =
+          formattedRoutes.find(
+            (route) =>
+              route.id ===
+              current?.id
+          );
 
-        return matchingRoute || formattedRoutes[0];
+        return (
+          matchingRoute ||
+          formattedRoutes[0]
+        );
       });
 
       setDatabaseError("");
@@ -351,32 +437,50 @@ function App() {
   ======================================================= */
 
   const loadAlerts = async () => {
-    const { data, error } = await supabase
-      .from("alerts")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(10);
+    const { data, error } =
+      await supabase
+        .from("alerts")
+        .select("*")
+        .order("created_at", {
+          ascending: false,
+        })
+        .limit(10);
 
     if (error) {
-      console.error("Supabase alerts error:", error);
+      console.error(
+        "Supabase alerts error:",
+        error
+      );
+
       setAlerts(DEFAULT_ALERTS);
       return;
     }
 
     if (data && data.length > 0) {
-      const formattedAlerts = data.map((alert) => ({
-        id: alert.id,
-        type: alert.type || "normal",
-        icon: alert.icon || "!",
-        title: alert.title || "Network alert",
-        route_id: alert.route_id,
-        time: formatTimeAgo(alert.created_at),
-        description:
-          alert.description || "Network event detected.",
-      }));
+      const formattedAlerts =
+        data.map((alert) => ({
+          id: alert.id,
+          type:
+            alert.type || "normal",
+          icon:
+            alert.icon || "!",
+          title:
+            alert.title ||
+            "Network alert",
+          route_id:
+            alert.route_id,
+          time: formatTimeAgo(
+            alert.created_at
+          ),
+          description:
+            alert.description ||
+            "Network event detected.",
+        }));
 
       setAlerts(formattedAlerts);
-      setNotifications(formattedAlerts.length);
+      setNotifications(
+        formattedAlerts.length
+      );
     } else {
       setAlerts(DEFAULT_ALERTS);
     }
@@ -389,6 +493,14 @@ function App() {
   useEffect(() => {
     loadRoutes();
     loadAlerts();
+
+    /*
+     * Generate another fresh value when
+     * the website is opened.
+     */
+    setNetworkLoad(
+      generateFreshNetworkLoad()
+    );
   }, []);
 
   /* =======================================================
@@ -396,13 +508,28 @@ function App() {
   ======================================================= */
 
   useEffect(() => {
-    const refreshTimer = setInterval(() => {
-      loadRoutes();
-      loadAlerts();
-      setLastUpdated(new Date());
-    }, 30000);
+    const refreshTimer =
+      setInterval(() => {
+        loadRoutes();
+        loadAlerts();
 
-    return () => clearInterval(refreshTimer);
+        /*
+         * Refresh displayed network load
+         * every 30 seconds.
+         */
+        setNetworkLoad(
+          generateFreshNetworkLoad()
+        );
+
+        setLastUpdated(
+          new Date()
+        );
+      }, 30000);
+
+    return () =>
+      clearInterval(
+        refreshTimer
+      );
   }, []);
 
   /* =======================================================
@@ -410,181 +537,222 @@ function App() {
   ======================================================= */
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setLastUpdated(new Date());
-    }, 1000);
+    const timer =
+      setInterval(() => {
+        setLastUpdated(
+          new Date()
+        );
+      }, 1000);
 
-    return () => clearInterval(timer);
+    return () =>
+      clearInterval(timer);
   }, []);
 
   /* =======================================================
      STATISTICS
   ======================================================= */
 
-  const averageOccupancy = useMemo(() => {
-    if (!routes.length) return 0;
+  const averageOccupancy =
+    networkLoad;
 
-    const total = routes.reduce(
-      (sum, route) => sum + Number(route.occupancy || 0),
-      0
-    );
-
-    return Math.round(total / routes.length);
-  }, [routes]);
-
-  const criticalRoutes = useMemo(() => {
-    return routes.filter(
-      (route) =>
-        route.status === "critical" || route.status === "high"
-    ).length;
-  }, [routes]);
+  const criticalRoutes =
+    useMemo(() => {
+      return routes.filter(
+        (route) =>
+          route.status ===
+            "critical" ||
+          route.status === "high"
+      ).length;
+    }, [routes]);
 
   /* =======================================================
      PREDICTION CALCULATION
   ======================================================= */
 
-  const predictionValue = useMemo(() => {
-    if (!selectedRoute) return 0;
+  const predictionValue =
+    useMemo(() => {
+      if (!selectedRoute) return 0;
 
-    const base = Number(selectedRoute.occupancy || 0);
+      const base = Number(
+        selectedRoute.occupancy || 0
+      );
 
-    const timeEffect =
-      predictionMinutes <= 15
-        ? 5
-        : predictionMinutes <= 30
-          ? 9
-          : predictionMinutes <= 45
-            ? 13
-            : 16;
+      const timeEffect =
+        predictionMinutes <= 15
+          ? 5
+          : predictionMinutes <= 30
+            ? 9
+            : predictionMinutes <= 45
+              ? 13
+              : 16;
 
-    return Math.min(
-      98,
-      Math.round(base + timeEffect)
-    );
-  }, [selectedRoute, predictionMinutes]);
+      return Math.min(
+        98,
+        Math.round(
+          base + timeEffect
+        )
+      );
+    }, [
+      selectedRoute,
+      predictionMinutes,
+    ]);
 
   const predictionStatus =
-    getPredictionStatus(predictionValue);
+    getPredictionStatus(
+      predictionValue
+    );
 
   /* =======================================================
      SAVE PREDICTION TO SUPABASE
   ======================================================= */
 
-  const runPrediction = async () => {
-    if (!selectedRoute) return;
+  const runPrediction =
+    async () => {
+      if (!selectedRoute)
+        return;
 
-    setIsPredicting(true);
-    setPrediction(null);
+      setIsPredicting(true);
+      setPrediction(null);
 
-    await new Promise((resolve) =>
-      setTimeout(resolve, 900)
-    );
+      await new Promise(
+        (resolve) =>
+          setTimeout(
+            resolve,
+            900
+          )
+      );
 
-    const confidence = Math.min(
-      98,
-      Math.round(88 + Math.random() * 8)
-    );
+      const confidence =
+        Math.min(
+          98,
+          Math.round(
+            88 +
+              Math.random() *
+                8
+          )
+        );
 
-    const generatedPrediction = {
-      value: predictionValue,
-      status: predictionStatus,
-      confidence,
+      const generatedPrediction =
+        {
+          value:
+            predictionValue,
+          status:
+            predictionStatus,
+          confidence,
+        };
+
+      setPrediction(
+        generatedPrediction
+      );
+
+      const { error } =
+        await supabase
+          .from(
+            "predictions"
+          )
+          .insert({
+            route_id:
+              selectedRoute.id,
+            current_occupancy:
+              selectedRoute.occupancy,
+            predicted_occupancy:
+              predictionValue,
+            prediction_minutes:
+              predictionMinutes,
+            confidence,
+            status:
+              predictionStatus,
+          });
+
+      if (error) {
+        console.error(
+          "Could not save prediction:",
+          error
+        );
+      } else {
+        console.log(
+          "Prediction successfully saved to Supabase."
+        );
+      }
+
+      const crowdInsert =
+        await supabase
+          .from(
+            "crowd_data"
+          )
+          .insert({
+            route_id:
+              selectedRoute.id,
+            occupancy:
+              selectedRoute.occupancy,
+            passengers:
+              selectedRoute.passengers,
+          });
+
+      if (crowdInsert.error) {
+        console.error(
+          "Could not save crowd data:",
+          crowdInsert.error
+        );
+      }
+
+      setIsPredicting(false);
     };
-
-    setPrediction(generatedPrediction);
-
-    /* Save prediction to database */
-
-    const { error } = await supabase
-      .from("predictions")
-      .insert({
-        route_id: selectedRoute.id,
-        current_occupancy: selectedRoute.occupancy,
-        predicted_occupancy: predictionValue,
-        prediction_minutes: predictionMinutes,
-        confidence,
-        status: predictionStatus,
-      });
-
-    if (error) {
-      console.error(
-        "Could not save prediction:",
-        error
-      );
-    } else {
-      console.log(
-        "Prediction successfully saved to Supabase."
-      );
-    }
-
-    /* Save current crowd reading */
-
-    const crowdInsert = await supabase
-      .from("crowd_data")
-      .insert({
-        route_id: selectedRoute.id,
-        occupancy: selectedRoute.occupancy,
-        passengers: selectedRoute.passengers,
-      });
-
-    if (crowdInsert.error) {
-      console.error(
-        "Could not save crowd data:",
-        crowdInsert.error
-      );
-    }
-
-    setIsPredicting(false);
-  };
 
   /* =======================================================
      NAVIGATION
   ======================================================= */
 
-  const scrollToSection = (page) => {
-    setActivePage(page);
+  const scrollToSection =
+    (page) => {
+      setActivePage(page);
 
-    const element = document.getElementById(
-      `page-${page}`
-    );
+      const element =
+        document.getElementById(
+          `page-${page}`
+        );
 
-    if (element) {
-      element.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }
-  };
+      if (element) {
+        element.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }
+    };
 
   /* =======================================================
      ROUTE SELECTION
   ======================================================= */
 
-  const selectRoute = (route) => {
-    if (!route) return;
+  const selectRoute =
+    (route) => {
+      if (!route) return;
 
-    setSelectedRoute(route);
-    setPrediction(null);
-    setActivePage("routes");
+      setSelectedRoute(route);
+      setPrediction(null);
+      setActivePage("routes");
 
-    setTimeout(() => {
-      document
-        .getElementById("page-routes")
-        ?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-    }, 50);
-  };
+      setTimeout(() => {
+        document
+          .getElementById(
+            "page-routes"
+          )
+          ?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+      }, 50);
+    };
 
-  const formattedTime = lastUpdated.toLocaleTimeString(
-    [],
-    {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }
-  );
+  const formattedTime =
+    lastUpdated.toLocaleTimeString(
+      [],
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }
+    );
 
   /* =======================================================
      RENDER
@@ -592,17 +760,24 @@ function App() {
 
   return (
     <div className="app">
-      {/* =================================================
-          SIDEBAR
-      ================================================= */}
+
+      {/* SIDEBAR */}
 
       <aside className="sidebar">
+
         <div className="brand">
-          <div className="brand-mark">CW</div>
+          <div className="brand-mark">
+            CW
+          </div>
 
           <div>
-            <strong>CrowdWise</strong>
-            <span>AI BUS INTELLIGENCE</span>
+            <strong>
+              CrowdWise
+            </strong>
+
+            <span>
+              AI BUS INTELLIGENCE
+            </span>
           </div>
         </div>
 
@@ -611,34 +786,46 @@ function App() {
         </div>
 
         <nav className="main-nav">
-          {NAV_ITEMS.map((item) => (
-            <button
-              key={item.id}
-              className={`nav-item ${
-                activePage === item.id
-                  ? "active"
-                  : ""
-              }`}
-              onClick={() =>
-                scrollToSection(item.id)
-              }
-            >
-              <span className="nav-icon">
-                {item.icon}
-              </span>
 
-              <span>{item.label}</span>
+          {NAV_ITEMS.map(
+            (item) => (
+              <button
+                key={item.id}
+                className={`nav-item ${
+                  activePage ===
+                  item.id
+                    ? "active"
+                    : ""
+                }`}
+                onClick={() =>
+                  scrollToSection(
+                    item.id
+                  )
+                }
+              >
 
-              {item.count && (
-                <span className="nav-count">
-                  {notifications}
+                <span className="nav-icon">
+                  {item.icon}
                 </span>
-              )}
-            </button>
-          ))}
+
+                <span>
+                  {item.label}
+                </span>
+
+                {item.count && (
+                  <span className="nav-count">
+                    {notifications}
+                  </span>
+                )}
+
+              </button>
+            )
+          )}
+
         </nav>
 
         <div className="sidebar-bottom">
+
           <div className="privacy-mini">
             <span>●</span>
             Passenger data anonymized
@@ -652,66 +839,83 @@ function App() {
           <small>
             © 2026 CrowdWise Intelligence
           </small>
+
         </div>
+
       </aside>
 
-      {/* =================================================
-          MAIN CONTENT
-      ================================================= */}
+      {/* MAIN CONTENT */}
 
       <main className="content">
-        {/* =================================================
-            TOPBAR
-        ================================================= */}
+
+        {/* TOPBAR */}
 
         <header className="topbar">
+
           <div>
             <span className="eyebrow">
               TRANSPORT INTELLIGENCE
             </span>
 
-            <h1>Network Command Center</h1>
+            <h1>
+              Network Command Center
+            </h1>
           </div>
 
           <div className="top-actions">
+
             <div className="system-live">
               <span />
               LIVE SYSTEM
             </div>
 
             <div className="clock">
-              <strong>{formattedTime}</strong>
-              <span>Chennai · IST</span>
+              <strong>
+                {formattedTime}
+              </strong>
+
+              <span>
+                Chennai · IST
+              </span>
             </div>
 
             <button
               className="icon-button"
               title="Notifications"
               onClick={() =>
-                setNotifications(0)
+                setNotifications(
+                  0
+                )
               }
             >
               ♧
             </button>
 
-            <div className="profile">CW</div>
+            <div className="profile">
+              CW
+            </div>
+
           </div>
+
         </header>
 
-        {/* =================================================
-            DATABASE STATUS
-        ================================================= */}
+        {/* DATABASE STATUS */}
 
         {loadingRoutes && (
           <div
             style={{
-              padding: "10px 15px",
-              marginBottom: "15px",
+              padding:
+                "10px 15px",
+              marginBottom:
+                "15px",
               border:
                 "1px solid #273528",
-              borderRadius: "8px",
-              fontSize: "9px",
-              color: "#9aa69b",
+              borderRadius:
+                "8px",
+              fontSize:
+                "9px",
+              color:
+                "#9aa69b",
             }}
           >
             Connecting to CrowdWise database...
@@ -721,26 +925,32 @@ function App() {
         {databaseError && (
           <div
             style={{
-              padding: "10px 15px",
-              marginBottom: "15px",
+              padding:
+                "10px 15px",
+              marginBottom:
+                "15px",
               border:
                 "1px solid #4a3928",
-              borderRadius: "8px",
-              fontSize: "9px",
-              color: "#e5a04e",
+              borderRadius:
+                "8px",
+              fontSize:
+                "9px",
+              color:
+                "#e5a04e",
             }}
           >
             {databaseError}
           </div>
         )}
 
-        {/* =================================================
-            OVERVIEW
-        ================================================= */}
+        {/* OVERVIEW */}
 
         <section id="page-overview">
+
           <div className="hero">
+
             <div className="hero-content">
+
               <div className="live-label">
                 <span />
                 REAL-TIME CROWD INTELLIGENCE
@@ -749,7 +959,9 @@ function App() {
               <h2>
                 Know the crowd
                 <br />
-                <em>before it arrives.</em>
+                <em>
+                  before it arrives.
+                </em>
               </h2>
 
               <p>
@@ -761,6 +973,7 @@ function App() {
               </p>
 
               <div className="hero-actions">
+
                 <button
                   className="primary-button"
                   onClick={() =>
@@ -783,10 +996,15 @@ function App() {
                 >
                   View Network →
                 </button>
+
               </div>
+
             </div>
 
+            {/* NETWORK LOAD */}
+
             <div className="hero-status">
+
               <div className="hero-status-header">
                 NETWORK LOAD
                 <i />
@@ -803,13 +1021,18 @@ function App() {
               <div className="hero-status-divider" />
 
               <div className="mini-metrics">
+
                 <div>
                   <strong>
                     {routes.reduce(
-                      (sum, route) =>
+                      (
+                        sum,
+                        route
+                      ) =>
                         sum +
                         Number(
-                          route.buses || 0
+                          route.buses ||
+                            0
                         ),
                       0
                     )}
@@ -821,7 +1044,9 @@ function App() {
                 </div>
 
                 <div>
-                  <strong>94.2%</strong>
+                  <strong>
+                    94.2%
+                  </strong>
 
                   <span>
                     AI CONFIDENCE
@@ -829,7 +1054,9 @@ function App() {
                 </div>
 
                 <div>
-                  <strong>18.6K</strong>
+                  <strong>
+                    18.6K
+                  </strong>
 
                   <span>
                     PASSENGERS TODAY
@@ -837,25 +1064,37 @@ function App() {
                 </div>
 
                 <div>
-                  <strong>24/7</strong>
+                  <strong>
+                    24/7
+                  </strong>
 
                   <span>
                     MONITORING
                   </span>
                 </div>
+
               </div>
+
             </div>
+
           </div>
 
+          {/* KPI GRID */}
+
           <div className="kpi-grid">
+
             <MetricCard
               icon="◉"
               label="BUSES TRACKED"
               value={routes.reduce(
-                (sum, route) =>
+                (
+                  sum,
+                  route
+                ) =>
                   sum +
                   Number(
-                    route.buses || 0
+                    route.buses ||
+                      0
                   ),
                 0
               )}
@@ -883,6 +1122,7 @@ function App() {
               sub="Requires attention"
               danger
             />
+
           </div>
 
           <DecisionSupport
@@ -891,18 +1131,20 @@ function App() {
               predictionValue
             }
           />
+
         </section>
 
-        {/* =================================================
-            NETWORK
-        ================================================= */}
+        {/* NETWORK */}
 
         <section
           className="panel"
           id="page-network"
         >
+
           <div className="panel-header">
+
             <div>
+
               <span className="eyebrow">
                 LIVE OPERATIONS
               </span>
@@ -910,15 +1152,19 @@ function App() {
               <h2>
                 Network Intelligence
               </h2>
+
             </div>
 
             <span className="data-badge">
               {routes.length} ACTIVE ROUTES
             </span>
+
           </div>
 
           <div className="network-grid">
+
             <div className="network-map">
+
               <NetworkMap
                 routes={routes}
                 selectedRoute={
@@ -928,10 +1174,13 @@ function App() {
                   selectRoute
                 }
               />
+
             </div>
 
             <div className="network-side">
+
               <div className="side-heading">
+
                 <span className="eyebrow">
                   LIVE ROUTES
                 </span>
@@ -939,63 +1188,91 @@ function App() {
                 <h3>
                   Network status
                 </h3>
+
               </div>
 
               <div className="route-status-list">
-                {routes.map((route) => (
-                  <button
-                    key={route.id}
-                    className="route-status"
-                    onClick={() =>
-                      selectRoute(
-                        route
-                      )
-                    }
-                  >
-                    <div className="route-badge">
-                      {route.id}
-                    </div>
 
-                    <div className="route-status-info">
-                      <strong>
-                        {route.name}
-                      </strong>
+                {routes.map(
+                  (route) => (
+                    <button
+                      key={
+                        route.id
+                      }
+                      className="route-status"
+                      onClick={() =>
+                        selectRoute(
+                          route
+                        )
+                      }
+                    >
 
-                      <span>
-                        {route.buses} buses ·{" "}
-                        {route.frequency}
-                      </span>
-                    </div>
+                      <div className="route-badge">
+                        {
+                          route.id
+                        }
+                      </div>
 
-                    <div className="route-occupancy">
-                      <b
-                        className={getStatusClass(
-                          route.status
-                        )}
-                      >
-                        {route.occupancy}%
-                      </b>
+                      <div className="route-status-info">
 
-                      <small>
-                        {getStatusLabel(
-                          route.status
-                        )}
-                      </small>
-                    </div>
-                  </button>
-                ))}
+                        <strong>
+                          {
+                            route.name
+                          }
+                        </strong>
+
+                        <span>
+                          {
+                            route.buses
+                          }{" "}
+                          buses ·{" "}
+                          {
+                            route.frequency
+                          }
+                        </span>
+
+                      </div>
+
+                      <div className="route-occupancy">
+
+                        <b
+                          className={getStatusClass(
+                            route.status
+                          )}
+                        >
+                          {
+                            route.occupancy
+                          }%
+                        </b>
+
+                        <small>
+                          {getStatusLabel(
+                            route.status
+                          )}
+                        </small>
+
+                      </div>
+
+                    </button>
+                  )
+                )}
+
               </div>
+
             </div>
+
           </div>
+
         </section>
 
-        {/* =================================================
-            ROUTES
-        ================================================= */}
+        {/* ROUTES */}
 
         <section id="page-routes">
+
           <div className="page-intro">
+
             <div>
+
               <span className="eyebrow">
                 ROUTE INTELLIGENCE
               </span>
@@ -1009,83 +1286,109 @@ function App() {
                 frequency and AI signals across
                 the active transport network.
               </p>
+
             </div>
 
             <span className="page-badge">
               DATABASE LIVE
             </span>
+
           </div>
 
           <div className="route-cards">
-            {routes.map((route) => (
-              <button
-                key={route.id}
-                className={`route-card ${
-                  selectedRoute?.id ===
-                  route.id
-                    ? "selected"
-                    : ""
-                }`}
-                onClick={() =>
-                  selectRoute(
-                    route
-                  )
-                }
-              >
-                <div className="route-card-top">
-                  <span className="route-large-number">
-                    {route.id}
-                  </span>
 
-                  <span
-                    className={`status-pill ${getStatusClass(
-                      route.status
-                    )}`}
-                  >
-                    {getStatusLabel(
-                      route.status
-                    )}
-                  </span>
-                </div>
+            {routes.map(
+              (route) => (
+                <button
+                  key={
+                    route.id
+                  }
+                  className={`route-card ${
+                    selectedRoute?.id ===
+                    route.id
+                      ? "selected"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    selectRoute(
+                      route
+                    )
+                  }
+                >
 
-                <div className="route-name">
-                  {route.name}
-                </div>
+                  <div className="route-card-top">
 
-                <div className="route-arrow">
-                  ↓
-                </div>
+                    <span className="route-large-number">
+                      {
+                        route.id
+                      }
+                    </span>
 
-                <div className="route-card-footer">
-                  <span>
-                    OCCUPANCY
-                  </span>
+                    <span
+                      className={`status-pill ${getStatusClass(
+                        route.status
+                      )}`}
+                    >
+                      {getStatusLabel(
+                        route.status
+                      )}
+                    </span>
 
-                  <strong>
-                    {route.occupancy}%
-                  </strong>
-                </div>
+                  </div>
 
-                <div className="occupancy-track">
-                  <span
-                    style={{
-                      width: `${route.occupancy}%`,
-                    }}
-                  />
-                </div>
-              </button>
-            ))}
+                  <div className="route-name">
+                    {
+                      route.name
+                    }
+                  </div>
+
+                  <div className="route-arrow">
+                    ↓
+                  </div>
+
+                  <div className="route-card-footer">
+
+                    <span>
+                      OCCUPANCY
+                    </span>
+
+                    <strong>
+                      {
+                        route.occupancy
+                      }%
+                    </strong>
+
+                  </div>
+
+                  <div className="occupancy-track">
+
+                    <span
+                      style={{
+                        width: `${route.occupancy}%`,
+                      }}
+                    />
+
+                  </div>
+
+                </button>
+              )
+            )}
+
           </div>
 
           {selectedRoute && (
             <div className="route-analysis">
+
               <div className="route-analysis-main">
+
                 <span className="eyebrow">
                   SELECTED CORRIDOR
                 </span>
 
                 <div className="big-percentage">
-                  {selectedRoute.occupancy}%
+                  {
+                    selectedRoute.occupancy
+                  }%
                 </div>
 
                 <div
@@ -1100,19 +1403,25 @@ function App() {
                 </div>
 
                 <div className="occupancy-track">
+
                   <span
                     style={{
                       width: `${selectedRoute.occupancy}%`,
                     }}
                   />
+
                 </div>
 
                 <p
                   style={{
-                    color: "#657181",
-                    fontSize: "9px",
-                    lineHeight: "1.7",
-                    marginTop: "18px",
+                    color:
+                      "#657181",
+                    fontSize:
+                      "9px",
+                    lineHeight:
+                      "1.7",
+                    marginTop:
+                      "18px",
                   }}
                 >
                   {selectedRoute.occupancy >=
@@ -1123,9 +1432,11 @@ function App() {
                       ? "Crowd levels are elevated. AI monitoring recommends checking demand in the next prediction window."
                       : "Passenger flow is currently within a manageable operating range."}
                 </p>
+
               </div>
 
               <div className="analysis-stats">
+
                 <InfoStat
                   label="PASSENGERS / BUS"
                   value={`${selectedRoute.passengers}`}
@@ -1151,10 +1462,13 @@ function App() {
                 <InfoStat
                   label="DEMAND TREND"
                   value={`${
-                    selectedRoute.trend > 0
+                    selectedRoute.trend >
+                    0
                       ? "+"
                       : ""
-                  }${selectedRoute.trend}%`}
+                  }${
+                    selectedRoute.trend
+                  }%`}
                 />
 
                 <InfoStat
@@ -1163,19 +1477,24 @@ function App() {
                     selectedRoute.status
                   )}
                 />
+
               </div>
+
             </div>
           )}
+
         </section>
 
-        {/* =================================================
-            STOPS + PREDICTION
-        ================================================= */}
+        {/* STOPS + PREDICTION */}
 
         <div className="two-panel-grid">
+
           <section className="panel">
+
             <div className="panel-header">
+
               <div>
+
                 <span className="eyebrow">
                   PASSENGER NODES
                 </span>
@@ -1183,73 +1502,99 @@ function App() {
                 <h2>
                   High-impact stops
                 </h2>
+
               </div>
 
               <span className="data-badge">
                 8 STOPS
               </span>
+
             </div>
 
             <div className="stop-list">
-              {STOPS.map((stop) => (
-                <button
-                  key={stop.id}
-                  className={`stop-item ${
-                    selectedStop.id ===
-                    stop.id
-                      ? "selected"
-                      : ""
-                  }`}
-                  onClick={() =>
-                    setSelectedStop(
-                      stop
-                    )
-                  }
-                >
-                  <span className="stop-number">
-                    0{stop.id}
-                  </span>
 
-                  <span className="stop-details">
-                    <strong>
-                      {stop.name}
-                    </strong>
-
-                    <span>
-                      {stop.area} ·{" "}
-                      {stop.routes.join(
-                        " / "
-                      )}
-                    </span>
-                  </span>
-
-                  <span
-                    className={getStatusClass(
-                      getPredictionStatus(
-                        stop.crowd
+              {STOPS.map(
+                (stop) => (
+                  <button
+                    key={
+                      stop.id
+                    }
+                    className={`stop-item ${
+                      selectedStop.id ===
+                      stop.id
+                        ? "selected"
+                        : ""
+                    }`}
+                    onClick={() =>
+                      setSelectedStop(
+                        stop
                       )
-                    )}
-                    style={{
-                      fontSize: "9px",
-                      fontWeight: 800,
-                    }}
+                    }
                   >
-                    {stop.crowd}%
-                  </span>
 
-                  <span className="stop-arrow">
-                    →
-                  </span>
-                </button>
-              ))}
+                    <span className="stop-number">
+                      0{
+                        stop.id
+                      }
+                    </span>
+
+                    <span className="stop-details">
+
+                      <strong>
+                        {
+                          stop.name
+                        }
+                      </strong>
+
+                      <span>
+                        {
+                          stop.area
+                        }{" "}
+                        ·{" "}
+                        {stop.routes.join(
+                          " / "
+                        )}
+                      </span>
+
+                    </span>
+
+                    <span
+                      className={getStatusClass(
+                        getPredictionStatus(
+                          stop.crowd
+                        )
+                      )}
+                      style={{
+                        fontSize:
+                          "9px",
+                        fontWeight:
+                          800,
+                      }}
+                    >
+                      {
+                        stop.crowd
+                      }%
+                    </span>
+
+                    <span className="stop-arrow">
+                      →
+                    </span>
+
+                  </button>
+                )
+              )}
+
             </div>
+
           </section>
 
           <section
             className="prediction-panel"
             id="page-prediction"
           >
+
             <div>
+
               <span className="eyebrow">
                 PREDICTIVE ENGINE
               </span>
@@ -1266,26 +1611,34 @@ function App() {
 
               {selectedRoute && (
                 <>
+
                   <div className="prediction-target">
+
                     <span>
                       SELECTED ROUTE
                     </span>
 
                     <strong>
-                      {selectedRoute.id} ·{" "}
-                      {selectedRoute.name}
+                      {
+                        selectedRoute.id
+                      }{" "}
+                      ·{" "}
+                      {
+                        selectedRoute.name
+                      }
                     </strong>
 
                     <small>
                       Current occupancy:{" "}
                       {
                         selectedRoute.occupancy
-                      }
-                      %
+                      }%
                     </small>
+
                   </div>
 
                   <div className="prediction-target">
+
                     <span>
                       FORECAST HORIZON
                     </span>
@@ -1294,18 +1647,24 @@ function App() {
                       value={
                         predictionMinutes
                       }
-                      onChange={(event) =>
+                      onChange={(
+                        event
+                      ) =>
                         setPredictionMinutes(
                           Number(
-                            event.target
+                            event
+                              .target
                               .value
                           )
                         )
                       }
                       style={{
-                        width: "100%",
-                        marginTop: "7px",
-                        padding: "8px",
+                        width:
+                          "100%",
+                        marginTop:
+                          "7px",
+                        padding:
+                          "8px",
                         border:
                           "1px solid #253027",
                         borderRadius:
@@ -1314,10 +1673,13 @@ function App() {
                           "#0a100e",
                         color:
                           "#dfe6df",
-                        outline: "none",
-                        fontSize: "9px",
+                        outline:
+                          "none",
+                        fontSize:
+                          "9px",
                       }}
                     >
+
                       <option value={10}>
                         Next 10 minutes
                       </option>
@@ -1337,7 +1699,9 @@ function App() {
                       <option value={60}>
                         Next 60 minutes
                       </option>
+
                     </select>
+
                   </div>
 
                   <button
@@ -1349,6 +1713,7 @@ function App() {
                       isPredicting
                     }
                   >
+
                     {isPredicting ? (
                       <>
                         <span className="loader" />
@@ -1356,59 +1721,77 @@ function App() {
                       </>
                     ) : (
                       <>
-                        <span>◈</span>
+                        <span>
+                          ◈
+                        </span>
                         Generate Prediction
                       </>
                     )}
+
                   </button>
 
                   {prediction && (
                     <div className="prediction-result">
+
                       <div className="prediction-result-top">
+
                         <span
                           className={`prediction-dot ${prediction.status}`}
                         />
 
                         <div>
+
                           <span>
                             FORECAST OCCUPANCY
                           </span>
 
                           <strong>
-                            {prediction.value}% ·{" "}
+                            {
+                              prediction.value
+                            }% ·{" "}
                             {getStatusLabel(
                               prediction.status
                             )}
                           </strong>
+
                         </div>
 
                         <b>
                           {
                             prediction.confidence
-                          }
-                          %
+                          }%
                         </b>
+
                       </div>
 
                       <div className="prediction-track">
+
                         <span
                           style={{
                             width: `${prediction.value}%`,
                           }}
                         />
+
                       </div>
 
                       <div className="prediction-horizon">
+
                         Forecast for{" "}
                         <strong>
-                          {predictionMinutes}{" "}
+                          {
+                            predictionMinutes
+                          }{" "}
                           minutes
                         </strong>{" "}
                         from now
+
                       </div>
 
                       <div className="recommendation-box">
-                        <span>✦</span>
+
+                        <span>
+                          ✦
+                        </span>
 
                         <p>
                           {prediction.value >=
@@ -1419,7 +1802,9 @@ function App() {
                               ? "AI recommends increasing monitoring frequency and preparing for elevated demand."
                               : "Current forecast remains manageable. Normal operations can continue."}
                         </p>
+
                       </div>
+
                     </div>
                   )}
 
@@ -1433,22 +1818,27 @@ function App() {
                         Supabase.
                       </div>
                     )}
+
                 </>
               )}
+
             </div>
+
           </section>
+
         </div>
 
-        {/* =================================================
-            ANALYTICS
-        ================================================= */}
+        {/* ANALYTICS */}
 
         <section
           className="panel"
           id="page-analytics"
         >
+
           <div className="panel-header">
+
             <div>
+
               <span className="eyebrow">
                 HISTORICAL DEMAND MODEL
               </span>
@@ -1456,52 +1846,71 @@ function App() {
               <h2>
                 Network demand analytics
               </h2>
+
             </div>
 
             <span className="data-badge">
               TODAY
             </span>
+
           </div>
 
           <div className="demand-chart">
-            {DEMAND_DATA.map((item) => (
-              <div
-                className="chart-column"
-                key={item.time}
-              >
-                <span>
-                  {item.value}%
-                </span>
 
-                <div className="chart-bar-area">
-                  <div
-                    className="chart-bar"
-                    style={{
-                      height: `${item.value}%`,
-                    }}
-                    title={`${item.time}: ${item.value}%`}
-                  />
+            {DEMAND_DATA.map(
+              (item) => (
+                <div
+                  className="chart-column"
+                  key={
+                    item.time
+                  }
+                >
+
+                  <span>
+                    {
+                      item.value
+                    }%
+                  </span>
+
+                  <div className="chart-bar-area">
+
+                    <div
+                      className="chart-bar"
+                      style={{
+                        height: `${item.value}%`,
+                      }}
+                      title={`${item.time}: ${item.value}%`}
+                    />
+
+                  </div>
+
+                  <small>
+                    {
+                      item.time
+                    }
+                  </small>
+
                 </div>
+              )
+            )}
 
-                <small>
-                  {item.time}
-                </small>
-              </div>
-            ))}
           </div>
 
           <div
             style={{
-              height: "25px",
+              height:
+                "25px",
             }}
           />
 
           <div className="insight">
+
             <div className="insight-number">
               94%
             </div>
 
             <div>
+
               <strong>
                 Peak-hour prediction confidence
               </strong>
@@ -1515,17 +1924,21 @@ function App() {
                 sensitivity during these
                 windows.
               </p>
+
             </div>
+
           </div>
+
         </section>
 
-        {/* =================================================
-            ALERTS
-        ================================================= */}
+        {/* ALERTS */}
 
         <section id="page-alerts">
+
           <div className="page-intro">
+
             <div>
+
               <span className="eyebrow">
                 OPERATIONAL SIGNALS
               </span>
@@ -1539,71 +1952,99 @@ function App() {
                 detected by the CrowdWise
                 intelligence engine.
               </p>
+
             </div>
+
           </div>
 
           <div className="alert-list">
-            {alerts.map((alert) => (
-              <div
-                className={`alert-card ${alert.type}`}
-                key={alert.id}
-              >
-                <div className="alert-indicator">
-                  {alert.icon}
-                </div>
 
-                <div className="alert-main">
-                  <div className="alert-title-row">
-                    <strong>
-                      {alert.title}
-                    </strong>
+            {alerts.map(
+              (alert) => (
+                <div
+                  className={`alert-card ${alert.type}`}
+                  key={
+                    alert.id
+                  }
+                >
 
-                    <span>
-                      {alert.time}
-                    </span>
+                  <div className="alert-indicator">
+                    {
+                      alert.icon
+                    }
                   </div>
 
-                  <b>
-                    ROUTE{" "}
-                    {alert.route_id ||
-                      "NETWORK"}
-                  </b>
+                  <div className="alert-main">
 
-                  <p>
-                    {alert.description}
-                  </p>
-                </div>
+                    <div className="alert-title-row">
 
-                <button
-                  className="text-button"
-                  onClick={() => {
-                    const route =
-                      routes.find(
-                        (item) =>
-                          item.id ===
-                          alert.route_id
+                      <strong>
+                        {
+                          alert.title
+                        }
+                      </strong>
+
+                      <span>
+                        {
+                          alert.time
+                        }
+                      </span>
+
+                    </div>
+
+                    <b>
+                      ROUTE{" "}
+                      {
+                        alert.route_id ||
+                        "NETWORK"
+                      }
+                    </b>
+
+                    <p>
+                      {
+                        alert.description
+                      }
+                    </p>
+
+                  </div>
+
+                  <button
+                    className="text-button"
+                    onClick={() => {
+
+                      const route =
+                        routes.find(
+                          (item) =>
+                            item.id ===
+                            alert.route_id
+                        );
+
+                      selectRoute(
+                        route ||
+                          routes[0]
                       );
 
-                    selectRoute(
-                      route ||
-                        routes[0]
-                    );
-                  }}
-                >
-                  Inspect →
-                </button>
-              </div>
-            ))}
+                    }}
+                  >
+                    Inspect →
+                  </button>
+
+                </div>
+              )
+            )}
+
           </div>
+
         </section>
 
-        {/* =================================================
-            SYSTEM HEALTH
-        ================================================= */}
+        {/* SYSTEM HEALTH */}
 
         <section className="panel">
+
           <div className="panel-header">
+
             <div>
+
               <span className="eyebrow">
                 PLATFORM STATUS
               </span>
@@ -1611,14 +2052,17 @@ function App() {
               <h2>
                 System health
               </h2>
+
             </div>
 
             <span className="data-badge">
               ALL SYSTEMS
             </span>
+
           </div>
 
           <div className="system-health-grid">
+
             <HealthCard
               title="AI Prediction Engine"
               description="Forecasting model responding normally."
@@ -1628,10 +2072,14 @@ function App() {
             <HealthCard
               title="Live Bus Telemetry"
               description={`${routes.reduce(
-                (sum, route) =>
+                (
+                  sum,
+                  route
+                ) =>
                   sum +
                   Number(
-                    route.buses || 0
+                    route.buses ||
+                      0
                   ),
                 0
               )} active vehicle signals received.`}
@@ -1652,15 +2100,15 @@ function App() {
                   ? "Watch"
                   : "Operational"
               }
-              warning={
-                Boolean(
-                  databaseError
-                )
-              }
+              warning={Boolean(
+                databaseError
+              )}
             />
+
           </div>
 
           <div className="architecture">
+
             <ArchitectureStep
               number="01"
               title="Collect"
@@ -1684,15 +2132,17 @@ function App() {
               title="Store"
               text="Supabase stores predictions, crowd readings and alerts."
             />
+
           </div>
+
         </section>
 
-        {/* =================================================
-            FOOTER
-        ================================================= */}
+        {/* FOOTER */}
 
         <footer>
+
           <div>
+
             <strong>
               CrowdWise
             </strong>
@@ -1701,20 +2151,28 @@ function App() {
               AI-powered public transport
               intelligence
             </span>
+
           </div>
 
           <div className="footer-center">
+
             Model v2.4.1 · Data refreshed{" "}
             {formattedTime}
+
           </div>
 
           <div>
+
             <span>
               Privacy-first architecture
             </span>
+
           </div>
+
         </footer>
+
       </main>
+
     </div>
   );
 }
@@ -1732,6 +2190,7 @@ function MetricCard({
 }) {
   return (
     <div className="metric-card">
+
       <div className="metric-icon">
         {icon}
       </div>
@@ -1750,7 +2209,10 @@ function MetricCard({
         {value}
       </strong>
 
-      <span>{sub}</span>
+      <span>
+        {sub}
+      </span>
+
     </div>
   );
 }
@@ -1800,28 +2262,36 @@ function DecisionSupport({
 
   return (
     <div className="decision-panel">
+
       <div className="decision-icon">
         ✦
       </div>
 
       <div className="decision-copy">
+
         <span className="eyebrow">
           AI DECISION SUPPORT
         </span>
 
-        <h3>{title}</h3>
+        <h3>
+          {title}
+        </h3>
 
         <p>
           {description} Current focus:{" "}
           <strong
             style={{
-              color: "#b9c4b8",
+              color:
+                "#b9c4b8",
             }}
           >
-            Route {route?.id || "—"}
+            Route{" "}
+            {route?.id ||
+              "—"}
           </strong>
           .
         </p>
+
       </div>
 
       <span
@@ -1829,8 +2299,11 @@ function DecisionSupport({
           status
         )}`}
       >
-        {getStatusLabel(status)}
+        {getStatusLabel(
+          status
+        )}
       </span>
+
     </div>
   );
 }
@@ -1845,8 +2318,15 @@ function InfoStat({
 }) {
   return (
     <div className="info-stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
+
+      <span>
+        {label}
+      </span>
+
+      <strong>
+        {value}
+      </strong>
+
     </div>
   );
 }
@@ -1863,6 +2343,7 @@ function HealthCard({
 }) {
   return (
     <div className="health-card">
+
       <span
         className={`health-dot ${
           warning
@@ -1872,11 +2353,15 @@ function HealthCard({
       />
 
       <div>
-        <strong>{title}</strong>
+
+        <strong>
+          {title}
+        </strong>
 
         <small>
           {description}
         </small>
+
       </div>
 
       <span
@@ -1888,6 +2373,7 @@ function HealthCard({
       >
         {status}
       </span>
+
     </div>
   );
 }
@@ -1903,13 +2389,19 @@ function ArchitectureStep({
 }) {
   return (
     <div className="architecture-step">
+
       <span className="architecture-number">
         {number}
       </span>
 
-      <strong>{title}</strong>
+      <strong>
+        {title}
+      </strong>
 
-      <p>{text}</p>
+      <p>
+        {text}
+      </p>
+
     </div>
   );
 }
@@ -1936,9 +2428,11 @@ function NetworkMap({
     <div
       className="map-placeholder"
       style={{
-        minHeight: "470px",
+        minHeight:
+          "470px",
       }}
     >
+
       <div className="map-grid" />
 
       <svg
@@ -1948,11 +2442,15 @@ function NetworkMap({
           position:
             "absolute",
           inset: 0,
-          width: "100%",
-          height: "100%",
-          opacity: 0.7,
+          width:
+            "100%",
+          height:
+            "100%",
+          opacity:
+            0.7,
         }}
       >
+
         <path
           d="M10 78 L28 60 L43 64 L57 43 L70 52 L88 28"
           fill="none"
@@ -1973,121 +2471,141 @@ function NetworkMap({
           stroke="#26332a"
           strokeWidth="0.6"
         />
+
       </svg>
 
       {routes
         .slice(0, 6)
-        .map((route, index) => {
-          const position =
-            positions[index];
+        .map(
+          (
+            route,
+            index
+          ) => {
 
-          if (!position) return null;
+            const position =
+              positions[
+                index
+              ];
 
-          const isSelected =
-            selectedRoute?.id ===
-            route.id;
+            if (!position)
+              return null;
 
-          return (
-            <button
-              key={route.id}
-              onClick={() =>
-                onSelectRoute(
-                  route
-                )
-              }
-              title={`${route.id} · ${route.occupancy}%`}
-              style={{
-                position:
-                  "absolute",
+            const isSelected =
+              selectedRoute?.id ===
+              route.id;
 
-                left: `${position.x}%`,
-
-                top: `${position.y}%`,
-
-                transform:
-                  "translate(-50%, -50%)",
-
-                width: isSelected
-                  ? "52px"
-                  : "42px",
-
-                height: isSelected
-                  ? "52px"
-                  : "42px",
-
-                borderRadius:
-                  "50%",
-
-                border: isSelected
-                  ? "2px solid #eaff4f"
-                  : "1px solid #34412d",
-
-                background:
-                  isSelected
-                    ? "#172014"
-                    : "#101712",
-
-                color:
-                  route.status ===
-                  "critical"
-                    ? "#ed656d"
-                    : route.status ===
-                        "high"
-                      ? "#e5a04e"
-                      : route.status ===
-                          "moderate"
-                        ? "#e5d05d"
-                        : "#72d58b",
-
-                cursor:
-                  "pointer",
-
-                zIndex: 5,
-
-                boxShadow: isSelected
-                  ? "0 0 28px rgba(234,255,79,.16)"
-                  : "none",
-
-                transition:
-                  "all .25s ease",
-              }}
-            >
-              <strong
+            return (
+              <button
+                key={
+                  route.id
+                }
+                onClick={() =>
+                  onSelectRoute(
+                    route
+                  )
+                }
+                title={`${route.id} · ${route.occupancy}%`}
                 style={{
-                  display:
-                    "block",
+                  position:
+                    "absolute",
 
-                  fontSize:
+                  left: `${position.x}%`,
+
+                  top: `${position.y}%`,
+
+                  transform:
+                    "translate(-50%, -50%)",
+
+                  width:
                     isSelected
-                      ? "10px"
-                      : "8px",
+                      ? "52px"
+                      : "42px",
+
+                  height:
+                    isSelected
+                      ? "52px"
+                      : "42px",
+
+                  borderRadius:
+                    "50%",
+
+                  border:
+                    isSelected
+                      ? "2px solid #eaff4f"
+                      : "1px solid #34412d",
+
+                  background:
+                    isSelected
+                      ? "#172014"
+                      : "#101712",
+
+                  color:
+                    route.status ===
+                    "critical"
+                      ? "#ed656d"
+                      : route.status ===
+                          "high"
+                        ? "#e5a04e"
+                        : route.status ===
+                            "moderate"
+                          ? "#e5d05d"
+                          : "#72d58b",
+
+                  cursor:
+                    "pointer",
+
+                  zIndex:
+                    5,
+
+                  boxShadow:
+                    isSelected
+                      ? "0 0 28px rgba(234,255,79,.16)"
+                      : "none",
+
+                  transition:
+                    "all .25s ease",
                 }}
               >
-                {route.id}
-              </strong>
 
-              <small
-                style={{
-                  display:
-                    "block",
+                <strong
+                  style={{
+                    display:
+                      "block",
+                    fontSize:
+                      isSelected
+                        ? "10px"
+                        : "8px",
+                  }}
+                >
+                  {
+                    route.id
+                  }
+                </strong>
 
-                  marginTop:
-                    "2px",
+                <small
+                  style={{
+                    display:
+                      "block",
+                    marginTop:
+                      "2px",
+                    fontSize:
+                      "6px",
+                    opacity:
+                      0.75,
+                  }}
+                >
+                  {
+                    route.occupancy
+                  }%
+                </small>
 
-                  fontSize:
-                    "6px",
-
-                  opacity:
-                    0.75,
-                }}
-              >
-                {route.occupancy}%
-              </small>
-            </button>
-          );
-        })}
+              </button>
+            );
+          }
+        )}
 
       <div className="map-center">
+
         <div className="map-pulse">
           ⌁
         </div>
@@ -2111,41 +2629,39 @@ function NetworkMap({
         >
           ● DATABASE ONLINE
         </span>
+
       </div>
 
       <div
         style={{
           position:
             "absolute",
-
-          left: "18px",
-
-          bottom: "16px",
-
+          left:
+            "18px",
+          bottom:
+            "16px",
           padding:
             "8px 10px",
-
           border:
             "1px solid #222c34",
-
           borderRadius:
             "7px",
-
           background:
             "rgba(8,12,17,.9)",
-
           color:
             "#657181",
-
-          fontSize: "7px",
-
+          fontSize:
+            "7px",
           letterSpacing:
             ".5px",
         }}
       >
         LIVE DATABASE VIEW ·{" "}
-        {routes.length} ROUTES
+        {
+          routes.length
+        } ROUTES
       </div>
+
     </div>
   );
 }
